@@ -1,1 +1,7 @@
 **/*.resx linguist-generated=true
+**/*.roff linguist-generated=true
+charts/ linguist-detectable=false
+arrays/ linguist-detectable=false
+data/ linguist-detectable=false
+dependencies/ linguist-detectable=false
+docs/ linguist-detectable=false
