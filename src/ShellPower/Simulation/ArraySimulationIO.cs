@@ -3,7 +3,7 @@
 namespace SSCP.ShellPower {
     public class ArraySimulationStepInput {
         // when and where
-        public DateTime Utc { get; set; }
+        public DateTimeOffset Utc { get; set; }
         /// <summary>
         /// Time zone offset from UTC. This has no effect on the simulation,
         /// but is useful for working with local time.

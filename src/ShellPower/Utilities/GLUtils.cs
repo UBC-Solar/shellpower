@@ -1,68 +1,119 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Diagnostics;
-using System.Threading;
-using OpenTK;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL;          // GL (core bindings)
+using OpenTK.Mathematics;              // Matrix4
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced; // Image<TPixel>
+using SixLabors.ImageSharp.PixelFormats;
 
-namespace SSCP.ShellPower {
-    public class GLUtils {
+namespace SSCP.ShellPower
+{
+    public static class GLUtils
+    {
+        private static Matrix4 projection;
+        private static Matrix4 view;
 
-        public static void SetCameraProjectionPerspective(int w, int h) {
-            // perspective projection
-            Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView((float)Math.PI / 6, w / (float)h, 0.1f, 1000.0f);
-            GL.MatrixMode(MatrixMode.Projection);
-            GL.LoadMatrix(ref projection);
+        // --- PROJECTION HELPERS (return matrices; upload as uniforms in your code) ---
+
+        public static Matrix4 CreatePerspective(int w, int h, float fovRadians = (float)Math.PI / 6f,
+                                                float zNear = 0.1f, float zFar = 1000f)
+        {
+            float aspect = w <= 0 || h <= 0 ? 1f : (float)w / h;
+            return Matrix4.CreatePerspectiveFieldOfView(fovRadians, aspect, zNear, zFar);
         }
 
         /// <summary>
-        /// Takes a texture width and height, plus a minimum dimension in meters.
-        /// Creates an ortho projection to the current viewport width, ensuring that the
-        /// smaller of width and height corresponds to the min dimension in meters.
+        /// Orthographic matrix where the smaller of (viewport width,height) spans minDim meters.
         /// </summary>
-        public static void SetCameraProjectionOrtho(double minDim) {
-            // orthographic projection
-            int[] vp = new int[4];
-            GL.GetInteger(GetPName.Viewport, vp);
-            int w = vp[2], h = vp[3];
-            double scale = Math.Max(minDim / w, minDim / h);
-            float volWidth = (float)(scale * w), volHeight = (float)(scale * h);
-            float zNear = 0.1f, zFar = 100.0f;
-            Matrix4 projection = Matrix4.CreateOrthographic(volWidth, volHeight, zNear, zFar);
-            GL.MatrixMode(MatrixMode.Projection);
-            GL.LoadMatrix(ref projection);
+        public static Matrix4 CreateOrthoFittingMinDim(int viewportWidth, int viewportHeight,
+                                                       double minDimMeters,
+                                                       float zNear = 0.1f, float zFar = 100f)
+        {
+            if (viewportWidth <= 0 || viewportHeight <= 0)
+                return Matrix4.Identity;
+
+            double scale = Math.Max(minDimMeters / viewportWidth, minDimMeters / viewportHeight);
+            float volW = (float)(scale * viewportWidth);
+            float volH = (float)(scale * viewportHeight);
+            return Matrix4.CreateOrthographic(volW, volH, zNear, zFar);
         }
-        public static void FastTexSettings() {
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Clamp);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Clamp);
+
+        // If you need to set a mat4 uniform without GL4/unsafe:
+        public static void SetMat4(int program, int baseLocation, in Matrix4 m)
+        {
+            // A GLSL mat4 occupies 4 consecutive vec4 uniforms (column-major).
+            GL.UseProgram(program);
+            GL.Uniform4(baseLocation + 0, m.M11, m.M21, m.M31, m.M41);
+            GL.Uniform4(baseLocation + 1, m.M12, m.M22, m.M32, m.M42);
+            GL.Uniform4(baseLocation + 2,  m.M13, m.M23, m.M33, m.M43);
+            GL.Uniform4(baseLocation + 3, m.M14, m.M24, m.M34, m.M44);
+        }
+
+        // --- TEXTURE HELPERS (ImageSharp → GL) ---
+
+        /// <summary>
+        /// Set common sampling/wrap params (DSA; no bind required).
+        /// </summary>
+        public static void FastTexSettings(int textureId)
+        {
+            GL.TextureParameter(textureId, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TextureParameter(textureId, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TextureParameter(textureId, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TextureParameter(textureId, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         }
 
         /// <summary>
-        /// Loads the given image as a 32bpp RGBA texture.
+        /// Upload an ImageSharp RGBA texture to the given texture object.
+        /// (No unsafe; uses managed array overload.)
         /// </summary>
-        public static void LoadTexture(Bitmap bmpTex, TextureUnit slot) {
-            Debug.WriteLine("loading array texture");
-            BitmapData bmpDataTex = bmpTex.LockBits(
-                new Rectangle(0, 0, bmpTex.Width, bmpTex.Height),
-                ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            Debug.WriteLine("loaded " + bmpTex.Width + "x" + bmpTex.Height + " tex, binding");
+        public static void LoadTexture(Image<Rgba32> img, TextureUnit slot, int textureId)
+        {
+            if (img is null) throw new ArgumentNullException(nameof(img));
 
-            // set it as texture 0
+            // Flatten pixels to Rgba32[] (one contiguous memory group)
+            var pixels = img.GetPixelMemoryGroup()[0].ToArray();
+
             GL.ActiveTexture(slot);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
-                bmpTex.Width, bmpTex.Height, 0,
-                OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte,
-                bmpDataTex.Scan0);
+            GL.BindTexture(TextureTarget.Texture2D, textureId);
 
-            // clean up
-            bmpTex.UnlockBits(bmpDataTex);
-            Debug.WriteLine("array texture loaded");
+            GL.TexImage2D(
+                TextureTarget.Texture2D,
+                level: 0,
+                internalformat: PixelInternalFormat.Rgba8,
+                width: img.Width,
+                height: img.Height,
+                border: 0,
+                format: PixelFormat.Rgba,
+                type: PixelType.UnsignedByte,
+                pixels: pixels);
+
+            FastTexSettings(textureId);
         }
+        
+        public static void SetCameraProjectionPerspective(int width, int height,
+            float fovDeg = 60f,
+            float near = 0.1f,
+            float far = 1000f)
+        {
+            float aspect = (float)width / height;
+            projection = Matrix4.CreatePerspectiveFieldOfView(
+                MathHelper.DegreesToRadians(fovDeg), aspect, near, far);
+
+            // simple look-at: camera at (0,0,5) looking at (0,0,0)
+            view = Matrix4.LookAt(new Vector3(0, 0, 5),
+                Vector3.Zero,
+                Vector3.UnitY);
+        }
+        
+        public static void UploadCameraUniforms(int shaderProg, string projName="uProj", string viewName="uView")
+        {
+            int uProj = GL.GetUniformLocation(shaderProg, projName);
+            int uView = GL.GetUniformLocation(shaderProg, viewName);
+
+            if (uProj >= 0) GL.UniformMatrix4(uProj, false, ref projection);
+            if (uView >= 0) GL.UniformMatrix4(uView, false, ref view);
+        }
+
+        public static Matrix4 Projection => projection;
+        public static Matrix4 View => view;
     }
 }

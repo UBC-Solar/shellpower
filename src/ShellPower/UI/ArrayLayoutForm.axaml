@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SSCP.ShellPower"
+        x:Class="SSCP.ShellPower.ArrayLayoutForm"
+        Width="800" Height="600"
+        Title="Array Layout">
+    <Grid RowDefinitions="Auto,*" ColumnDefinitions="*">
+        <!-- Top toolbar -->
+        <StackPanel Orientation="Horizontal" Margin="5">
+            <Button x:Name="ButtonEdit" Content="Edit" Margin="5" Click="ButtonEdit_Click"/>
+            <Button x:Name="ButtonCreateString" Content="Create String" Margin="5" Click="ButtonCreateString_Click"/>
+            <Button x:Name="ButtonDeleteString" Content="Delete String" Margin="5" Click="ButtonDeleteString_Click"/>
+            <CheckBox x:Name="CheckBoxEditDiodes" Content="Edit Bypass Diodes"
+                      Margin="15,0,0,0" IsVisible="False"
+                      Checked="CheckBoxEditDiodes_Changed" Unchecked="CheckBoxEditDiodes_Changed"/>
+            <Button x:Name="ButtonOK" Content="OK" Margin="15,0,0,0" Click="ButtonOK_Click"/>
+            <Button x:Name="ButtonCancel" Content="Cancel" Margin="5,0,0,0" Click="ButtonCancel_Click"/>
+            <Button x:Name="ButtonLoadLayout" Content="Load Layout Texture..." Margin="15,0,0,0"
+                    Click="ButtonLoadLayout_Click"/>
+        </StackPanel>
+
+        <!-- Main content -->
+        <Grid Grid.Row="1" ColumnDefinitions="2*,*">
+            <!-- Array layout view -->
+            <local:ArrayLayoutControl x:Name="ArrayLayoutControl"
+                                      CellStringChanged="ArrayLayoutControl_CellStringChanged"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      Margin="5"/>
+
+            <!-- Right side panel -->
+            <StackPanel Grid.Column="1" Margin="5">
+                <TextBlock x:Name="LabelMakeString" Text="Make a new string..." />
+                <TextBlock x:Name="LabelExplain" Text="Editing string..." IsVisible="False"/>
+                <ListBox x:Name="ListBoxStrings"
+                         ItemsSource="{Binding Strings}"
+                         SelectedItem="{Binding SelectedCellString, Mode=TwoWay}"
+                         Margin="0,5,0,5"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

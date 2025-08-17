@@ -1,0 +1,42 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Class="SSCP.ShellPower.ArrayDimensionsWindow"
+    Width="360" Height="220"
+    Title="Array Dimensions">
+  <Border Padding="12">
+    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,*,Auto">
+      <!-- Inputs -->
+      <Grid Grid.Row="0" Grid.ColumnSpan="2"
+            ColumnDefinitions="100,*,100,*"
+            RowDefinitions="Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Min X"/>
+        <TextBox  x:Name="numX0" Grid.Row="0" Grid.Column="1" TextChanged="Num_ValueChanged"/>
+
+        <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="Max X"/>
+        <TextBox  x:Name="numX1" Grid.Row="0" Grid.Column="3" TextChanged="Num_ValueChanged"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Min Z"/>
+        <TextBox  x:Name="numZ0" Grid.Row="1" Grid.Column="1" TextChanged="Num_ValueChanged"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Max Z"/>
+        <TextBox  x:Name="numZ1" Grid.Row="1" Grid.Column="3" TextChanged="Num_ValueChanged"/>
+      </Grid>
+
+      <!-- Status -->
+      <TextBlock x:Name="labelStatus"
+                 Grid.Row="1" Grid.ColumnSpan="2"
+                 Margin="0,8,0,0"
+                 Foreground="OrangeRed"/>
+
+      <!-- Buttons -->
+      <StackPanel Grid.Row="2" Grid.ColumnSpan="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8" Margin="0,12,0,0">
+        <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
+        <Button x:Name="buttonOK"     Content="OK"     Click="ButtonOK_Click"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

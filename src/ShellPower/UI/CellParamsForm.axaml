@@ -1,0 +1,60 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sp="clr-namespace:SSCP.ShellPower"
+    x:Class="SSCP.ShellPower.CellParamsWindow"
+    Width="700" Height="500"
+    Title="Cell Parameters">
+  <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,*">
+    <!-- Left: Inputs -->
+    <StackPanel Grid.Row="0" Grid.Column="0" Margin="12" Spacing="6">
+      <TextBlock Text="Standard test conditions (STC)" FontWeight="Bold" />
+      <Grid ColumnDefinitions="150,120,150,120" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,12,Auto,Auto">
+        <!-- Voc, Isc -->
+        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Voc (V)"/>
+        <TextBox x:Name="textBoxVoc" Grid.Row="0" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+        <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="Isc (A)"/>
+        <TextBox x:Name="textBoxIsc" Grid.Row="0" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+
+        <!-- dVoc/dT, dIsc/dT -->
+        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="dVoc/dT (V/°C)"/>
+        <TextBox x:Name="textBoxVocTemp" Grid.Row="1" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+        <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="dIsc/dT (A/°C)"/>
+        <TextBox x:Name="textBoxIscTemp" Grid.Row="1" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+
+        <!-- Area, N ideal, Series R -->
+        <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Area (m²)"/>
+        <TextBox x:Name="textBoxArea" Grid.Row="2" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+        <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="N (ideality)"/>
+        <TextBox x:Name="textBoxNIdeal" Grid.Row="2" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+
+        <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Series R (Ω)"/>
+        <TextBox x:Name="textBoxSeriesR" Grid.Row="3" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+
+        <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Text="Temperature (°C)"/>
+        <TextBox x:Name="textBoxTemp" Grid.Row="8" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+        <TextBlock Grid.Row="8" Grid.Column="2" VerticalAlignment="Center" Text="Irradiance (W/m²)"/>
+        <TextBox x:Name="textBoxInsolation" Grid.Row="8" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+
+        <!-- Validation status -->
+        <TextBlock x:Name="labelStatus"
+                   Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="4"
+                   Foreground="OrangeRed" />
+      </Grid>
+    </StackPanel>
+
+    <!-- Right: Plot + numbers -->
+    <StackPanel Grid.Row="0" Grid.Column="1" Margin="12" Spacing="8">
+      <TextBlock Text="IV Sweep" FontWeight="Bold" />
+      <sp:SimpleGraph x:Name="chartIV" Height="260" PlotMargins="40,20,20,30"/>
+      <TextBlock x:Name="labelMaxPower" Foreground="LightGray" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <!-- Buttons -->
+    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal"
+                HorizontalAlignment="Right" Margin="12" Spacing="8">
+      <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
+      <Button x:Name="buttonOK" Content="OK" Click="ButtonOK_Click"/>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -1,5 +1,7 @@
 ﻿using System;
 using OpenTK;
+using OpenTK.Mathematics;
+// using Vector2 = System.Numerics.Vector2;
 
 namespace SSCP.ShellPower {
 

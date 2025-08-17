@@ -42,7 +42,7 @@ namespace SSCP.ShellPower {
         public double VoltageDrop { get; set; }
     }
     public class EnvironmentJsonSpec {
-        public DateTime Utc { get; set; }
+        public DateTimeOffset Utc { get; set; }
         public double TimezoneOffsetHours { get; set; }
         public double LatitudeDeg { get; set; }
         public double LongitudeDeg { get; set; }

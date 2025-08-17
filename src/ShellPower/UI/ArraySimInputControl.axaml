@@ -1,0 +1,78 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Class="SSCP.ShellPower.ArraySimInputControl"
+    MinWidth="520"
+    MinHeight="420">
+  <Border Padding="12" CornerRadius="12" Classes="Card">
+    <ScrollViewer>
+      <StackPanel Spacing="12">
+        <TextBlock Text="Simulation Inputs" FontSize="18" FontWeight="SemiBold"/>
+
+        <!-- Location -->
+        <StackPanel Spacing="6">
+          <TextBlock Text="Location" FontWeight="SemiBold"/>
+          <Grid ColumnDefinitions="Auto,*,16,Auto,*" RowDefinitions="Auto">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Latitude"/>
+            <TextBox Grid.Column="1" x:Name="LatBox" Watermark="[-90,90]"/>
+            <Rectangle Grid.Column="2" Width="16"/>
+            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="Longitude"/>
+            <TextBox Grid.Column="4" x:Name="LonBox" Watermark="[-180,180]"/>
+          </Grid>
+        </StackPanel>
+
+        <!-- Orientation -->
+        <StackPanel Spacing="6">
+          <TextBlock Text="Car Orientation" FontWeight="SemiBold"/>
+          <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Heading"/>
+            <Slider Grid.Row="0" Grid.Column="1" x:Name="DirSlider" Minimum="0" Maximum="15" TickFrequency="1" IsSnapToTickEnabled="True"/>
+            <TextBlock Grid.Row="0" Grid.Column="2" x:Name="CarDirectionLabel"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Tilt (°)"/>
+            <Slider Grid.Row="1" Grid.Column="1" x:Name="TiltSlider" Minimum="-180" Maximum="180" TickFrequency="5"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" x:Name="TiltLabel"/>
+          </Grid>
+        </StackPanel>
+
+        <!-- Time -->
+        <StackPanel Spacing="6">
+          <TextBlock Text="Time" FontWeight="SemiBold"/>
+          <Grid ColumnDefinitions="Auto,*,16,Auto,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="UTC Date"/>
+            <DatePicker Grid.Row="0" Grid.Column="1" x:Name="UtcDatePicker"/>
+            <Rectangle Grid.Row="0" Grid.Column="2" Width="16"/>
+            <TextBlock Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Text="UTC Time"/>
+            <TimePicker Grid.Row="0" Grid.Column="4" x:Name="UtcTimePicker"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="TZ Offset (hours)"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="TzOffsetBox" Watermark="[-15,15]"/>
+            <Rectangle Grid.Row="1" Grid.Column="2" Width="16"/>
+            <TextBlock Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" Text="Local Time"/>
+            <StackPanel Grid.Row="1" Grid.Column="4" Orientation="Horizontal" Spacing="8">
+              <TextBlock x:Name="LocalTimeLabel"/>
+              <Slider x:Name="TimeOfDaySlider" Minimum="0" Maximum="1439" Width="180"/>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+
+        <!-- Conditions -->
+        <StackPanel Spacing="6">
+          <TextBlock Text="Conditions" FontWeight="SemiBold"/>
+          <Grid ColumnDefinitions="Auto,*,16,Auto,*,16,Auto,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Irradiance (W/m²)"/>
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="IrradBox" Watermark="[0,2000]"/>
+
+            <TextBlock Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Text="Indirect (W/m²)"/>
+            <TextBox Grid.Row="0" Grid.Column="4" x:Name="IndirectIrradBox" Watermark="[0,2000]"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Encap Loss (%)"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="EncapLossBox" Watermark="[0,100]"/>
+          </Grid>
+        </StackPanel>
+
+        <TextBlock x:Name="ErrorLabel" Foreground="Red" TextWrapping="Wrap"/>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

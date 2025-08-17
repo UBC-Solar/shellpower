@@ -1,0 +1,24 @@
+<!-- Put this under Views/IVTraceWindow.axaml (for example) -->
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sp="clr-namespace:SSCP.ShellPower"
+    x:Class="SSCP.ShellPower.IVTraceWindow"
+    Width="520" Height="360"
+    Title="IV Trace">
+    <Border Background="Black" Padding="12">
+        <StackPanel Spacing="8">
+            <TextBlock x:Name="labelName"
+                       FontSize="16"
+                       FontWeight="Bold"
+                       Foreground="White"/>
+            <TextBlock x:Name="labelMaxPower"
+                       Foreground="LightGray"/>
+            <TextBlock x:Name="labelFillFactor"
+                       Foreground="LightGray"/>
+            <sp:SimpleGraph x:Name="simpleGraphIV"
+                            Height="220"
+                            PlotMargins="40,20,20,30"/>
+        </StackPanel>
+    </Border>
+</Window>

@@ -1,458 +1,555 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Drawing.Drawing2D;
-using System.Data;
-using System.Linq;
-using System.Text;
-using System.Windows.Forms;
 using System.Diagnostics;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced;
+using SixLabors.ImageSharp.PixelFormats;
+using Color = System.Drawing.Color;
+using Point = Avalonia.Point;
+using System.Runtime.InteropServices;
 
-namespace SSCP.ShellPower {
-    /// <summary>
-    /// Allows user to define individual strings.
-    /// </summary>
-    public partial class ArrayLayoutControl : UserControl {
+namespace SSCP.ShellPower;
 
-        private const int JUNCTION_RADIUS = 4; //px
-        private const int JUNCTION_RADIUS_CLICK = 15; //px
+/// <summary>
+/// Avalonia control that replaces the old WinForms + System.Drawing ArrayLayoutControl.
+/// Draws the array layout image, lets the user pick cells and bypass diodes, and animates selection.
+/// Assumptions:
+/// - ArraySpec.LayoutTexture is an ImageSharp <see cref="Image{Rgba32}"/>.
+/// - ArraySpec, ArraySpec.CellString, ArraySpec.Cell, ArraySpec.BypassDiode, Pair<T> exist as in the legacy code.
+/// </summary>
+public partial class ArrayLayoutControl : Control
+{
+    private const double JUNCTION_RADIUS = 4.0; // px in control space (after scaling)
+    private const double JUNCTION_RADIUS_CLICK = 15.0; // px in control space
 
-        // array model, currently selected string
-        private ArraySpec _array;
-        private ArraySpec.CellString _cellStr;
+    // array model, currently selected string
+    private ArraySpec? _array;
+    private ArraySpec.CellString? _cellStr;
 
-        // array layout and cached properties computed from the layout
-        private Bitmap tex, texSmall; // layout and downsampled version
-        private Color[,] pixels;
-        private PointF[] cellPoints, junctionPoints;
+    // source image (ImageSharp) and cached Avalonia bitmap for drawing
+    private Image<Rgba32>? _layoutImageSharp;        // provided by model
+    private WriteableBitmap? _layoutBitmapCached;    // converted for fast drawing
 
-        // selection rendering
-        private Bitmap texSelected; // overlay
-        private List<int> bypassJunctions = new List<int>();
+    // cached texels (ARGB in uint) from ImageSharp for picking/flood fill
+    private uint[,]? _pixels;
 
-        // mouseover hints
-        private int mouseoverJunction;
-        private ArraySpec.Cell mouseoverCell;
+    private Point[] _cellPoints = System.Array.Empty<Point>();
+    private Point[] _junctionPoints = System.Array.Empty<Point>();
 
-        public ArrayLayoutControl() {
-            // init view
-            InitializeComponent();
-            this.DoubleBuffered = true;
-            this.SetStyle(ControlStyles.UserPaint |
-                          ControlStyles.AllPaintingInWmPaint |
-                          ControlStyles.ResizeRedraw |
-                          ControlStyles.ContainerControl |
-                          ControlStyles.OptimizedDoubleBuffer |
-                          ControlStyles.SupportsTransparentBackColor,
-                          true);
+    // selection rendering
+    private WriteableBitmap? _texSelected; // overlay (animated hatch)
+    private readonly List<int> _bypassJunctions = new();
 
-            // init model
-            Editable = true;
-            AnimatedSelection = false;
+    // mouseover hints
+    private int _mouseoverJunction = -1;
+    private ArraySpec.Cell? _mouseoverCell;
 
-            // animate selection
-            System.Windows.Forms.Timer timer = new Timer();
-            timer.Interval = 40;
-            timer.Tick += new EventHandler(OnAnimationTick);
-            timer.Enabled = true;
-        }
+    // animation
+    private readonly DispatcherTimer _timer;
 
-        public ArraySpec Array {
-            get { return _array; }
-            set {
-                _array = value;
-                if (_array != null && !_array.Strings.Contains(_cellStr)) {
-                    _cellStr = null;
-                }
+    public ArrayLayoutControl()
+    {
+        Editable = true;
+        EditBypassDiodes = false;
+        AnimatedSelection = false;
 
-                Refresh();
-            }
-        }
-        public ArraySpec.CellString CellString {
-            get { return _cellStr; }
-            set { _cellStr = value; Refresh(); }
-        }
-        public bool Editable { get; set; }
-        public bool EditBypassDiodes { get; set; }
-        public bool AnimatedSelection { get; set; }
-        public event EventHandler CellStringChanged;
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        _timer.Tick += (_, _) => { if (AnimatedSelection) InvalidateVisual(); };
+        _timer.Start();
 
-        protected override void OnPaint(PaintEventArgs e) {
-            Graphics g = e.Graphics;
-            DateTime start = DateTime.Now;
+        // react to size changes so we can rescale cached textures
+        this.GetObservable(BoundsProperty).Subscribe(_ => EnsureSelectionOverlay());
+    }
 
-            RecomputeArrayViewModel(); // compute junction points, downsampled array image, etc
-            //Debug.WriteLine("compute: " + (DateTime.Now - start).TotalMilliseconds);
+    #region Public API
 
-            DrawBackground(g);
-            //Debug.WriteLine("clear: " + (DateTime.Now - start).TotalMilliseconds);
+    public ArraySpec? Array
+    {
+        get => _array;
+        set
+        {
+            _array = value;
+            if (_array != null && !_array.Strings.Contains(_cellStr))
+                _cellStr = null;
 
-            if (texSmall != null) {
-                g.DrawImage(texSmall, new Point(0, 0));
-                //Debug.WriteLine("layout: " + (DateTime.Now - start).TotalMilliseconds);
-            }
-
-            if (CellString != null) {
-                RecomputeTexSelected();
-                DrawSelectedString(g);
-                //Debug.WriteLine("highlight: " + (DateTime.Now - start).TotalMilliseconds);
-            }
-
-            if (mouseoverJunction >= 0 && mouseoverJunction < junctionPoints.Length) {
-                DrawJunction(g, junctionPoints[mouseoverJunction], Brushes.White);
-                //Debug.WriteLine("mouse: " + (DateTime.Now - start).TotalMilliseconds);
-            }
-            //Debug.WriteLine("done: " + (DateTime.Now - start).TotalMilliseconds);
-        }
-
-        protected override void OnMouseDown(MouseEventArgs e) {
-            // are we even listening for clicks?
-            if (!Editable || CellString == null) {
-                return;
-            }
-
-            // find out which cell or cell-cell junction was clicked on
-            RecomputeArrayViewModel();
-            if (EditBypassDiodes) {
-                int junction = GetJunctionIxAtPixel(e.X, e.Y);
-                if (junction < 0) {
-                    return;
-                }
-                ClickBypassJunction(junction);
-            } else {
-                ArraySpec.Cell newCell = GetCellAtPixel(e.X, e.Y);
-                if (newCell == null) {
-                    return;
-                }
-                ClickCell(newCell);
-            }
-
-            // the string has changed. tell our listeners and redraw the UI
-            if (CellStringChanged != null) {
-                CellStringChanged(this, null);
-            }
-            Refresh();
-        }
-
-        protected override void OnMouseUp(MouseEventArgs e) {
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e) {
-            RecomputeArrayViewModel();
-
-            if (EditBypassDiodes) {
-                mouseoverJunction = GetJunctionIxAtPixel(e.X, e.Y);
-                mouseoverCell = null;
-            } else {
-                mouseoverCell = GetCellAtPixel(e.X, e.Y);
-                mouseoverJunction = -1;
-            }
-            if (mouseoverJunction == -1 && mouseoverCell == null) {
-                this.Cursor = Cursors.Arrow; // not clickable
-            } else {
-                this.Cursor = Cursors.Hand;
-            }
-        }
-
-        private void OnAnimationTick(object sender, EventArgs e) {
-            if (AnimatedSelection) {
-                Refresh();
-            }
-        }
-
-
-        private void RecomputeArrayViewModel() {
-            if (Array == null || Array.LayoutTexture == null) return;
-            
-            // read the array texture
-            DateTime start = DateTime.Now;
-            if (tex != Array.LayoutTexture){
-                tex = Array.LayoutTexture;
-                pixels = GetPixels(tex);
-                //Debug.WriteLine("... read pix " + (DateTime.Now - start).TotalMilliseconds);
-            }
-
-            // scale the array texture to the current viewport size
-            SizeF size = GetScaledArraySize();
-            if (texSmall == null || texSmall.Size != size.ToSize()) {
-                texSmall = new Bitmap((int)size.Width, (int)size.Height);
-                Graphics g = Graphics.FromImage(texSmall);
-                g.DrawImage(Array.LayoutTexture, new Rectangle(new Point(0, 0), texSmall.Size));
-                //Debug.WriteLine("... read pix " + (DateTime.Now - start).TotalMilliseconds);
-            }
-
-            // compute properties of the individual cells
-            cellPoints = ComputeCellCenterpoints(CellString);
-            junctionPoints = ComputeJunctions(cellPoints);
-            //Debug.WriteLine("... c+j " + (DateTime.Now - start).TotalMilliseconds);
-        }
-
-        private void RecomputeTexSelected() {
-            SizeF size = GetScaledArraySize();
-            int w = Array.LayoutTexture.Width, h = Array.LayoutTexture.Height;
-            float scale = size.Width / w;
-            int selW = (int)size.Width, selH = (int)size.Height;
-            if (texSelected == null || texSelected.Width != selW || texSelected.Height != selH) {
-                texSelected = new Bitmap(selW, selH);
-            }
-            BitmapData texSelData = texSelected.LockBits(
-                new Rectangle(0, 0, selW, selH),
-                ImageLockMode.WriteOnly,
-                PixelFormat.Format32bppArgb);
-            int animation = (int)(DateTime.Now.Ticks / 1000000 % 16);
-            unsafe {
-                uint* ptr = (uint*)texSelData.Scan0.ToPointer();
-                for (int i = 0; i < selW * selH; i++) {
-                    ptr[i] = 0;
-                }
-                foreach (ArraySpec.Cell cell in CellString.Cells) {
-                    foreach (Pair<int> pixel in cell.Pixels) {
-                        int i = (int)(pixel.First * scale);
-                        int j = (int)(pixel.Second * scale);
-                        if (i < 0 || i >= selW || j < 0 || j >= selH)
-                        {
-                            continue;
-                        }
-                        bool mask = (j + i + animation) % 16 < 8;
-                        uint alpha = (uint)(mask ? 0x80 : 0x00);
-                        uint color = 0xffffff | (alpha << 24); // white highlight
-                        ptr[j * selW + i] = color;
-                    }
-                }
-            }
-            texSelected.UnlockBits(texSelData);
-        }
-
-        private void DrawBackground(Graphics g) {
-            g.Clear(Color.Black);
-            if (Array == null || Array.LayoutTexture == null) {
-                return;
-            }
-            g.CompositingQuality = CompositingQuality.HighQuality;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-        }
-
-        private void DrawSelectedString(Graphics g) {
-            // highlight the selected cells
-            g.DrawImage(texSelected, new Point(0,0));
-
-            // draw the wiring
-            if (cellPoints.Length > 1) {
-                g.DrawLines(new Pen(Color.FromArgb(80, Color.Black), 3.0f), cellPoints);
-                g.DrawLines(new Pen(Color.LightYellow, 1.0f), cellPoints);
-            }
-
-            // draw the bypass diode arcs
-            int ndiodes = CellString.BypassDiodes.Count;
-            for (int i = 0; i < ndiodes; i++) {
-                ArraySpec.BypassDiode diode = CellString.BypassDiodes[i];
-                PointF pA = junctionPoints[diode.CellIxs.First];
-                PointF pB = junctionPoints[diode.CellIxs.Second + 1];
-                float perpX = (pB.Y - pA.Y) * 0.2f;
-                float perpY = (pA.X - pB.X) * 0.2f;
-                PointF pMidA = new PointF(
-                    pA.X * 0.7f + pB.X * 0.3f + perpX,
-                    pA.Y * 0.7f + pB.Y * 0.3f + perpY);
-                PointF pMidB = new PointF(
-                    pA.X * 0.3f + pB.X * 0.7f + perpX,
-                    pA.Y * 0.3f + pB.Y * 0.7f + perpY);
-                g.DrawBezier(new Pen(Color.FromArgb(200, Color.Black), 5f), pA, pMidA, pMidB, pB);
-                g.DrawBezier(new Pen(Color.Red, 3f), pA, pMidA, pMidB, pB);
-            }
-
-            // draw the bypass diode endpoints
-            foreach(int i in bypassJunctions){
-                DrawJunction(g, junctionPoints[i], Brushes.Red);
-            }
-        }
-
-        private void DrawJunction(Graphics g, PointF point, Brush brush) {
-            g.FillEllipse(brush,
-                point.X - JUNCTION_RADIUS, point.Y - JUNCTION_RADIUS,
-                JUNCTION_RADIUS * 2, JUNCTION_RADIUS * 2);
-        }
-
-        private void ClickBypassJunction(int junction) {
-            if (!bypassJunctions.Remove(junction)) {
-                bypassJunctions.Add(junction);
-            }
-            if (bypassJunctions.Count == 2) {
-                // ix0 and ix1 can be the same, for single-cell bypass diodes
-                int ix0 = Math.Min(bypassJunctions[0], bypassJunctions[1]);
-                int ix1 = Math.Max(bypassJunctions[0], bypassJunctions[1]) - 1;
-                ArraySpec.BypassDiode newDiode = new ArraySpec.BypassDiode();
-                newDiode.CellIxs = new Pair<int>(ix0, ix1);
-                if (!CellString.BypassDiodes.Remove(newDiode)) {
-                    CellString.BypassDiodes.Add(newDiode);
-                }
-                bypassJunctions.Clear();
-            }
-        }
-
-        private void ClickCell(ArraySpec.Cell cell) {
-            // either add it to the current string, or remove it if it's already there
-            if (!CellString.Cells.Remove(cell)) {
-                CellString.Cells.Add(cell);
-            } else {
-                // prune bypass diodes
-                CellString.BypassDiodes.RemoveAll((diode) => {
-                    return diode.CellIxs.First >= CellString.Cells.Count ||
-                        diode.CellIxs.Second >= CellString.Cells.Count;
-                });
-            }
-        }
-
-        /// <summary>
-        /// Gets the centerpoint of each cell in the texture 
-        /// that has been wired in the current string, in order, 
-        /// in screen (layout control pixel, not texel) coordinates.
-        /// </summary>
-        private PointF[] ComputeCellCenterpoints(ArraySpec.CellString cellString) {
-            if (cellString == null) {
-                return new PointF[0];
-            }
-
-            SizeF arraySize = GetScaledArraySize();
-            float scale = arraySize.Width / Array.LayoutTexture.Width;
-
-            int n = cellString.Cells.Count;
-            PointF[] points = new PointF[n];
-            for (int i = 0; i < n; i++) {
-                ArraySpec.Cell cell = cellString.Cells[i];
-                int sx = 0, sy = 0;
-                foreach (Pair<int> xy in cell.Pixels) {
-                    sx += xy.First;
-                    sy += xy.Second;
-                }
-                int m = cell.Pixels.Count;
-                points[i] = new PointF(
-                    (float)sx / m * scale,
-                    (float)sy / m * scale);
-            }
-            return points;
-        }
-
-        private PointF[] ComputeJunctions(PointF[] cells) {
-            if (cells.Length == 0) {
-                return new PointF[0];
-            } else if (cells.Length == 1) {
-                return new PointF[] {
-                    new PointF(cells[0].X - 10, cells[0].Y),
-                    new PointF(cells[0].X + 10, cells[0].Y)
-                };
-            } else {
-                int n = cells.Length + 1;
-                PointF[] junctions = new PointF[n];
-                junctions[0] = new PointF(
-                    cells[0].X * 1.5f - cells[1].X * 0.5f,
-                    cells[0].Y * 1.5f - cells[1].Y * 0.5f);
-                junctions[n - 1] = new PointF(
-                    cells[n - 2].X * 1.5f - cells[n - 3].X * 0.5f,
-                    cells[n - 2].Y * 1.5f - cells[n - 3].Y * 0.5f);
-                for (int i = 1; i < n - 1; i++) {
-                    junctions[i] = new PointF(
-                        cells[i - 1].X * 0.5f + cells[i].X * 0.5f,
-                        cells[i - 1].Y * 0.5f + cells[i].Y * 0.5f);
-                }
-                return junctions;
-            }
-        }
-
-        private SizeF GetScaledArraySize() {
-            double texW = Array.LayoutTexture.Width;
-            double texH = Array.LayoutTexture.Height;
-            double scale = Math.Min(Width / texW, Height / texH);
-            return new SizeF((float)(scale * texW), (float)(scale * texH));
-        }
-
-        private Color[,] GetPixels(Bitmap bmp) {
-            int w = bmp.Width, h = bmp.Height;
-            Color[,] pixels = new Color[w, h];
-
-            // jump thru some hoops to read Bitmap data efficiently
-            BitmapData texData = bmp.LockBits(
-                new Rectangle(0, 0, w, h),
-                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            unsafe {
-                int* ptr = (int*)texData.Scan0.ToPointer();
-                for (int i = 0; i < w; i++) {
-                    for (int j = 0; j < h; j++) {
-                        Color pixelColor = Color.FromArgb(ptr[j * w + i] | unchecked((int)0xff000000));
-                        Debug.Assert(pixelColor.A == 255);
-                        pixels[i, j] = pixelColor;
-                    }
-                }
-            }
-            bmp.UnlockBits(texData);
-
-            return pixels;
-        }
-
-        private ArraySpec.Cell GetCellAtPixel(int pixelX, int pixelY) {
-            // find click texture coords
-            int x, y;
-            if (!GetTexCoord(pixelX, pixelY, out x, out y)) return null;
-            Color color = pixels[x, y];
-            if (ColorUtils.IsGrayscale(color)) return null;
-
-            // flood fill
-            int w = Array.LayoutTexture.Width, h = Array.LayoutTexture.Height;
-            HashSet<Pair<int>> ffS = new HashSet<Pair<int>>();
-            Queue<Pair<int>> ffQ = new Queue<Pair<int>>();
-            ffQ.Enqueue(new Pair<int>(x, y));
-            while (ffQ.Count > 0) {
-                Pair<int> xy = ffQ.Dequeue();
-
-                // skip if redundant
-                if (ffS.Contains(xy)) continue;
-                ffS.Add(xy);
-
-                // enqueue the neighbors
-                for (int x2 = xy.First - 1; x2 <= xy.First + 1; x2++) {
-                    for (int y2 = xy.Second - 1; y2 <= xy.Second + 1; y2++) {
-                        if (x2 <= 0 || x2 >= w || y2 <= 0 || y2 >= h) continue;
-                        if (pixels[x2, y2] != color) continue;
-                        ffQ.Enqueue(new Pair<int>(x2, y2));
-                   } 
-                }
-            }
-
-            // create the new cell
-            ArraySpec.Cell newCell = new ArraySpec.Cell();
-            newCell.Color = color;
-            newCell.Pixels.AddRange(ffS);
-            newCell.Pixels.Sort(new Comparison<Pair<int>>((a, b) => {
-                if (a.Second < b.Second) return -1; // scan line order
-                if (a.Second > b.Second) return 1;
-                if (a.First < b.First) return -1;
-                if (a.First > b.First) return 1;
-                return 0;
-            }));
-            return newCell;
-        }
-
-        private int GetJunctionIxAtPixel(int pixelX, int pixelY) {
-            int minIx = -1, minDD = JUNCTION_RADIUS_CLICK * JUNCTION_RADIUS_CLICK;
-            for (var i = 0; i < junctionPoints.Length; i++) {
-                int dx = pixelX - (int)junctionPoints[i].X;
-                int dy = pixelY - (int)junctionPoints[i].Y;
-                int dd = dx * dx + dy * dy;
-                if (dd < minDD) {
-                    minDD = dd;
-                    minIx = i;
-                }
-            }
-            return minIx;
-        }
-
-        private bool GetTexCoord(int pixX, int pixY, out int x, out int y) {
-            int w = Array.LayoutTexture.Width, h = Array.LayoutTexture.Height;
-            SizeF size = GetScaledArraySize();
-            x = (int)(pixX * w / size.Width);
-            y = (int)(pixY * h / size.Height);
-            return !(x < 0 || x >= w || y < 0 || y >= h);
+            _layoutImageSharp = _array?.LayoutTexture; // ImageSharp image
+            _layoutBitmapCached = null;                 // will rebuild lazily
+            _pixels = null;                             // force re-read on next render
+            InvalidateVisual();
         }
     }
+
+    public ArraySpec.CellString? CellString
+    {
+        get => _cellStr;
+        set { _cellStr = value; InvalidateVisual(); }
+    }
+
+    public bool Editable { get; set; }
+    public bool EditBypassDiodes { get; set; }
+    public bool AnimatedSelection { get; set; }
+
+    public event EventHandler? CellStringChanged;
+
+    #endregion
+
+    #region Rendering
+
+    public override void Render(DrawingContext context)
+    {
+        base.Render(context);
+
+        context.FillRectangle(Brushes.Black, new Rect(Bounds.Size));
+        if (_array == null || _layoutImageSharp == null)
+            return;
+
+        // refresh cached bitmap + pixels if source changed
+        RecomputeArrayViewModel();
+
+        // draw scaled layout texture top-left aligned (like legacy)
+        var scaled = GetScaledArrayRect();
+        if (_layoutBitmapCached != null)
+            context.DrawImage(_layoutBitmapCached, new Rect(_layoutBitmapCached.Size), scaled);
+
+        // selected cells overlay (animated)
+        if (CellString != null)
+        {
+            RecomputeTexSelected();
+            if (_texSelected != null)
+                context.DrawImage(_texSelected, new Rect(_texSelected.Size), scaled);
+        }
+
+        // draw wiring between cell centers
+        if (_cellPoints.Length > 1)
+        {
+            var blackPen = new Pen(new SolidColorBrush(Avalonia.Media.Color.FromArgb(80, 0, 0, 0)), 3);
+            var lightPen = new Pen(Brushes.LightYellow, 1);
+            DrawPolyline(context, _cellPoints, blackPen);
+            DrawPolyline(context, _cellPoints, lightPen);
+        }
+
+        // draw bypass diode arcs
+        if (CellString != null)
+        {
+            foreach (var diode in CellString.BypassDiodes)
+            {
+                var pA = _junctionPoints[diode.CellIxs.First];
+                var pB = _junctionPoints[diode.CellIxs.Second + 1];
+                var perp = new Avalonia.Point((pB.Y - pA.Y) * 0.2, (pA.X - pB.X) * 0.2);
+                var pMidA = new Avalonia.Point(pA.X * 0.7 + pB.X * 0.3 + perp.X, pA.Y * 0.7 + pB.Y * 0.3 + perp.Y);
+                var pMidB = new Avalonia.Point(pA.X * 0.3 + pB.X * 0.7 + perp.X, pA.Y * 0.3 + pB.Y * 0.7 + perp.Y);
+                var geom = new PathGeometry
+                {
+                    Figures =
+                    {
+                        new PathFigure
+                        {
+                            StartPoint = pA,
+                            Segments = { new BezierSegment { Point1 = pMidA, Point2 = pMidB, Point3 = pB } },
+                            IsClosed = false
+                        }
+                    }
+                };
+                context.DrawGeometry(null, new Pen(Brushes.Black, 5) { Brush = new SolidColorBrush(Avalonia.Media.Color.FromArgb(200, 0, 0, 0)) }, geom);
+                context.DrawGeometry(null, new Pen(Brushes.Red, 3), geom);
+            }
+        }
+
+        // draw bypass diode endpoints
+        foreach (var ix in _bypassJunctions)
+        {
+            if ((uint)ix < (uint)_junctionPoints.Length)
+                DrawJunction(context, _junctionPoints[ix], Brushes.Red);
+        }
+
+        // mouseover hint
+        if (_mouseoverJunction >= 0 && _mouseoverJunction < _junctionPoints.Length)
+        {
+            DrawJunction(context, _junctionPoints[_mouseoverJunction], Brushes.White);
+        }
+    }
+
+    private void DrawPolyline(DrawingContext ctx, Point[] pts, Pen pen)
+    {
+        if (pts.Length < 2) return;
+        var fig = new PathFigure { StartPoint = pts[0] };
+        for (int i = 1; i < pts.Length; i++) fig.Segments.Add(new LineSegment { Point = pts[i] });
+        var geom = new PathGeometry { Figures = { fig } };
+        ctx.DrawGeometry(null, pen, geom);
+    }
+
+    private void DrawJunction(DrawingContext ctx, Point p, IBrush brush)
+        => ctx.DrawEllipse(brush, null, p, JUNCTION_RADIUS, JUNCTION_RADIUS);
+
+    #endregion
+
+    #region Pointer input
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (!Editable || CellString == null || _array == null) return;
+
+        RecomputeArrayViewModel();
+        var p = e.GetPosition(this);
+
+        if (EditBypassDiodes)
+        {
+            int j = GetJunctionIxAtPixel(p);
+            if (j >= 0) ClickBypassJunction(j);
+        }
+        else
+        {
+            var cell = GetCellAtPixel(p);
+            if (cell != null) ClickCell(cell);
+        }
+
+        CellStringChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (_array == null) return;
+
+        RecomputeArrayViewModel();
+        var p = e.GetPosition(this);
+
+        if (EditBypassDiodes)
+        {
+            _mouseoverJunction = GetJunctionIxAtPixel(p);
+            _mouseoverCell = null;
+        }
+        else
+        {
+            _mouseoverCell = GetCellAtPixel(p);
+            _mouseoverJunction = -1;
+        }
+
+        Cursor = (_mouseoverJunction == -1 && _mouseoverCell == null)
+            ? new Cursor(StandardCursorType.Arrow)
+            : new Cursor(StandardCursorType.Hand);
+
+        InvalidateVisual();
+    }
+
+    #endregion
+
+    #region Core logic (adapted)
+
+    private void RecomputeArrayViewModel()
+    {
+        if (_array == null || _array.LayoutTexture == null) return;
+
+        if (!ReferenceEquals(_layoutImageSharp, _array.LayoutTexture))
+        {
+            _layoutImageSharp = _array.LayoutTexture;
+            _layoutBitmapCached = null; // will rebuild on next render
+            _pixels = null;             // force reread
+        }
+
+        // ensure cached Avalonia bitmap exists
+        _layoutBitmapCached ??= ConvertImageSharpToWriteableBitmap(_layoutImageSharp!);
+
+        // read pixels lazily from ImageSharp
+        _pixels ??= GetPixels(_layoutImageSharp!);
+
+        // compute cell + junction points
+        _cellPoints = ComputeCellCenterpoints(CellString);
+        _junctionPoints = ComputeJunctions(_cellPoints);
+
+        EnsureSelectionOverlay();
+    }
+
+    private void EnsureSelectionOverlay()
+    {
+        if (_layoutBitmapCached == null) return;
+        var scaled = GetScaledArrayRect();
+        var size = new PixelSize(Math.Max((int)Math.Round(scaled.Width), 1), Math.Max((int)Math.Round(scaled.Height), 1));
+        if (_texSelected == null || _texSelected.PixelSize != size)
+        {
+            _texSelected?.Dispose();
+            _texSelected = new WriteableBitmap(size, new Vector(96, 96), Avalonia.Platform.PixelFormat.Bgra8888);
+        }
+    }
+
+    private void RecomputeTexSelected()
+    {
+        if (_texSelected == null || _layoutBitmapCached == null || CellString == null) return;
+
+        var scaled = GetScaledArrayRect();
+        double scaleX = scaled.Width / _layoutBitmapCached.PixelSize.Width;
+        double scaleY = scaled.Height / _layoutBitmapCached.PixelSize.Height;
+        int selW = _texSelected.PixelSize.Width;
+        int selH = _texSelected.PixelSize.Height;
+
+        int animation = (int)((DateTime.UtcNow.Ticks / 1_000_000) % 16);
+
+        using var fb = _texSelected.Lock();
+
+        // fb.RowBytes is the stride in bytes for each row
+        int stride = fb.RowBytes;
+        int bytes = stride * selH;
+
+        // Build a BGRA buffer in managed memory, then copy it into the WriteableBitmap
+        var buffer = new byte[bytes]; // zero-initialized → fully transparent
+
+        foreach (var cell in CellString.Cells)
+        {
+            foreach (var px in cell.Pixels)
+            {
+                int i = (int)(px.First * scaleX);
+                int j = (int)(px.Second * scaleY);
+                if ((uint)i >= (uint)selW || (uint)j >= (uint)selH) continue;
+
+                bool mask = ((i + j + animation) % 16) < 8;
+                byte a = mask ? (byte)0x80 : (byte)0x00;
+
+                int off = j * stride + i * 4; // BGRA layout
+                buffer[off + 0] = 0xFF; // B
+                buffer[off + 1] = 0xFF; // G
+                buffer[off + 2] = 0xFF; // R
+                buffer[off + 3] = a;    // A
+            }
+        }
+
+        // Copy managed buffer → bitmap
+        Marshal.Copy(buffer, 0, fb.Address, bytes);
+
+    }
+
+    private Point[] ComputeCellCenterpoints(ArraySpec.CellString? cellString)
+    {
+        if (cellString == null || _layoutBitmapCached == null)
+            return System.Array.Empty<Point>();
+
+        var scaled = GetScaledArrayRect();
+        double scaleX = scaled.Width / _layoutBitmapCached.PixelSize.Width;
+        double scaleY = scaled.Height / _layoutBitmapCached.PixelSize.Height;
+
+        int n = cellString.Cells.Count;
+        var points = new Point[n];
+        for (int i = 0; i < n; i++)
+        {
+            var cell = cellString.Cells[i];
+            long sx = 0, sy = 0; int m = cell.Pixels.Count;
+            foreach (var xy in cell.Pixels) { sx += xy.First; sy += xy.Second; }
+            points[i] = new Point((sx / (double)m) * scaleX, (sy / (double)m) * scaleY);
+        }
+        return points;
+    }
+
+    private Point[] ComputeJunctions(Point[] cells)
+    {
+        if (cells.Length == 0) return System.Array.Empty<Point>();
+        if (cells.Length == 1)
+            return new[] { new Point(cells[0].X - 10, cells[0].Y), new Point(cells[0].X + 10, cells[0].Y) };
+
+        int n = cells.Length + 1;
+        var jx = new Point[n];
+        jx[0] = new Point(cells[0].X * 1.5 - cells[1].X * 0.5, cells[0].Y * 1.5 - cells[1].Y * 0.5);
+        jx[^1] = new Point(cells[^1].X * 1.5 - cells[^2].X * 0.5, cells[^1].Y * 1.5 - cells[^2].Y * 0.5);
+        for (int i = 1; i < n - 1; i++)
+            jx[i] = new Point((cells[i - 1].X + cells[i].X) * 0.5, (cells[i - 1].Y + cells[i].Y) * 0.5);
+        return jx;
+    }
+
+    private Rect GetScaledArrayRect()
+    {
+        if (_layoutBitmapCached == null)
+        {
+            return new Rect();
+        }
+
+        double texW = _layoutBitmapCached.PixelSize.Width;
+        double texH = _layoutBitmapCached.PixelSize.Height;
+        double w = Math.Max(Bounds.Width, 1);
+        double h = Math.Max(Bounds.Height, 1);
+        double scale = Math.Min(w / texW, h / texH);
+
+        return new Rect(0, 0, scale * texW, scale * texH);
+    }
+
+    private static WriteableBitmap ConvertImageSharpToWriteableBitmap(Image<Rgba32> src)
+    {
+        var size = new PixelSize(src.Width, src.Height);
+        var wb = new WriteableBitmap(size, new Vector(96, 96), Avalonia.Platform.PixelFormat.Bgra8888);
+
+        using var fb = wb.Lock();
+
+        int stride = fb.RowBytes;
+        int w = src.Width;
+        int h = src.Height;
+
+        // Build a managed BGRA buffer (zero-initialized)
+        var buffer = new byte[stride * h];
+
+        for (int y = 0; y < h; y++)
+        {
+            var rowSpan = src.DangerousGetPixelRowMemory(y).Span; // or src.GetPixelRowSpan(y)
+            int rowOffset = y * stride;
+
+            for (int x = 0; x < w; x++)
+            {
+                Rgba32 px = rowSpan[x];
+
+                int off = rowOffset + x * 4; // BGRA
+                buffer[off + 0] = px.B;                         // B
+                buffer[off + 1] = px.G;                         // G
+                buffer[off + 2] = px.R;                         // R
+                buffer[off + 3] = px.A == 0 ? (byte)255 : px.A; // A (ensure nonzero alpha like legacy)
+            }
+        }
+
+        // Copy managed buffer → WriteableBitmap
+        Marshal.Copy(buffer, 0, fb.Address, buffer.Length);
+
+        return wb;
+    }
+
+    private static uint[,] GetPixels(Image<Rgba32> img)
+    {
+        int w = img.Width, h = img.Height;
+        var pixels = new uint[w, h];
+        for (int y = 0; y < h; y++)
+        {
+            var row = img.DangerousGetPixelRowMemory(y).Span;
+            for (int x = 0; x < w; x++)
+            {
+                var p = row[x];
+                byte a = p.A == 0 ? (byte)255 : p.A; // legacy assumed opaque
+                uint argb = ((uint)a << 24) | ((uint)p.R << 16) | ((uint)p.G << 8) | p.B;
+                pixels[x, y] = argb;
+            }
+        }
+        return pixels;
+    }
+
+    private ArraySpec.Cell? GetCellAtPixel(Point pt)
+    {
+        if (_array == null || _layoutImageSharp == null || _pixels == null) return null;
+        if (!TryGetTexCoord(pt, out int x, out int y)) return null;
+        var argb = _pixels[x, y];
+        if (IsGrayscaleArgb(argb)) return null;
+
+        // flood fill in texture space
+        int w = _layoutImageSharp.Width, h = _layoutImageSharp.Height;
+        var visited = new HashSet<Pair<int>>();
+        var q = new Queue<Pair<int>>();
+        q.Enqueue(new Pair<int>(x, y));
+
+        while (q.Count > 0)
+        {
+            var p = q.Dequeue();
+            if (!visited.Add(p)) continue;
+
+            for (int x2 = p.First - 1; x2 <= p.First + 1; x2++)
+            for (int y2 = p.Second - 1; y2 <= p.Second + 1; y2++)
+            {
+                if (x2 <= 0 || x2 >= w || y2 <= 0 || y2 >= h) continue;
+                if (_pixels[x2, y2] != argb) continue;
+                q.Enqueue(new Pair<int>(x2, y2));
+            }
+        }
+
+        var newCell = new ArraySpec.Cell
+        {
+            // Store ImageSharp Rgba32 (R,G,B,A order)
+            Color = new Rgba32(
+                (byte)((argb >> 16) & 0xFF), // R
+                (byte)((argb >> 8) & 0xFF),  // G
+                (byte)(argb & 0xFF),         // B
+                (byte)((argb >> 24) & 0xFF)  // A
+            )
+        };
+        newCell.Pixels.AddRange(visited);
+        newCell.Pixels.Sort((a, b) => a.Second != b.Second ? a.Second.CompareTo(b.Second) : a.First.CompareTo(b.First));
+        return newCell;
+    }
+
+    private int GetJunctionIxAtPixel(Point pt)
+    {
+        int minIx = -1; double minDD = JUNCTION_RADIUS_CLICK * JUNCTION_RADIUS_CLICK;
+        for (int i = 0; i < _junctionPoints.Length; i++)
+        {
+            double dx = pt.X - _junctionPoints[i].X;
+            double dy = pt.Y - _junctionPoints[i].Y;
+            double dd = dx * dx + dy * dy;
+            if (dd < minDD) { minDD = dd; minIx = i; }
+        }
+        return minIx;
+    }
+
+    private bool TryGetTexCoord(Point pt, out int x, out int y)
+    {
+        x = y = -1;
+        if (_layoutBitmapCached == null)
+            return false;
+
+        var scaled = GetScaledArrayRect();
+        if (scaled.Width <= 0 || scaled.Height <= 0)
+            return false;
+
+        double u = pt.X / scaled.Width; // [0,1]
+        double v = pt.Y / scaled.Height;
+
+        int w = _layoutBitmapCached.PixelSize.Width;
+        int h = _layoutBitmapCached.PixelSize.Height;
+
+        x = (int)Math.Floor(u * w);
+        y = (int)Math.Floor(v * h);
+
+        return !(x < 0 || x >= w || y < 0 || y >= h);
+    }
+
+
+    private void ClickBypassJunction(int junction)
+    {
+        if (!_bypassJunctions.Remove(junction))
+            _bypassJunctions.Add(junction);
+        if (_bypassJunctions.Count == 2 && CellString != null)
+        {
+            int ix0 = Math.Min(_bypassJunctions[0], _bypassJunctions[1]);
+            int ix1 = Math.Max(_bypassJunctions[0], _bypassJunctions[1]) - 1;
+            var newDiode = new ArraySpec.BypassDiode { CellIxs = new Pair<int>(ix0, ix1) };
+            if (!CellString.BypassDiodes.Remove(newDiode))
+                CellString.BypassDiodes.Add(newDiode);
+            _bypassJunctions.Clear();
+        }
+    }
+
+    private void ClickCell(ArraySpec.Cell cell)
+    {
+        if (CellString == null) return;
+        if (!CellString.Cells.Remove(cell))
+        {
+            CellString.Cells.Add(cell);
+        }
+        else
+        {
+            // prune bypass diodes
+            CellString.BypassDiodes.RemoveAll(d => d.CellIxs.First >= CellString.Cells.Count || d.CellIxs.Second >= CellString.Cells.Count);
+        }
+    }
+
+    #endregion
+
+    #region Helpers
+
+    private static bool IsGrayscaleArgb(uint argb)
+    {
+        byte r = (byte)((argb >> 16) & 0xFF);
+        byte g = (byte)((argb >> 8) & 0xFF);
+        byte b = (byte)(argb & 0xFF);
+        return r == g && g == b; // same simple heuristic as legacy
+    }
+
+    #endregion
 }

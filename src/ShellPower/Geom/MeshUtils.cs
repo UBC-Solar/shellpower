@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Diagnostics;
 using OpenTK;
+using System.Numerics;
 
 namespace SSCP.ShellPower {
     public static class MeshUtils {
@@ -39,7 +40,7 @@ namespace SSCP.ShellPower {
             for (int i = 0; i < mesh.points.Length; i++) {
                 if (pointIndexMap[i] == i) {
                     normals[i] = mesh.normals[i] - Vector3.Dot(mesh.normals[i], axis) * axis;
-                    normals[i].Normalize();
+                    normals[i] = Vector3.Normalize(normals[i]);
                 } else {
                     normals[i] = mesh.normals[i];
                     normals[pointIndexMap[i]] = mesh.normals[i] - 2 * Vector3.Dot(mesh.normals[i], axis) * axis;
@@ -140,13 +141,15 @@ namespace SSCP.ShellPower {
                     Vector3 vMid2 = FindBoundary(vAO, vB2, volume);
                     Vector3 vMidB = input.points[ixB1]*0.5f + input.points[ixB2]*0.5f;
                     points.Add(vMid1); points.Add(vMid2); points.Add(vMidB);
-                    float b1 = (vMid1 - vAO).Length / ((vB1 - vAO).Length + float.Epsilon);
-                    float b2 = (vMid2 - vAO).Length / ((vB2 - vAO).Length + float.Epsilon);
+                    float b1 = (vMid1 - vAO).Length() / ((vB1 - vAO).Length() + float.Epsilon);
+                    float b2 = (vMid2 - vAO).Length() / ((vB2 - vAO).Length() + float.Epsilon);
                     Debug.Assert(0 <= b1 && b1 <= 1 && 0 <= b2 && b2 <= 1);
                     Vector3 nMid1 = input.normals[ixA] * (1 - b1) + input.normals[ixB1] * b1;
                     Vector3 nMid2 = input.normals[ixA] * (1 - b2) + input.normals[ixB2] * b2;
                     Vector3 nMidB = input.normals[ixB1] * 0.5f + input.normals[ixB2] * 0.5f;
-                    nMid1.Normalize(); nMid2.Normalize(); nMidB.Normalize();
+                    nMid1 = Vector3.Normalize(nMid1); 
+                    nMid2 = Vector3.Normalize(nMid2); 
+                    nMidB = Vector3.Normalize(nMidB);
                     norms.Add(nMid1); norms.Add(nMid2); norms.Add(nMidB);
                     //norms.Add(input.normals[ixA]); norms.Add(input.normals[ixA]); norms.Add(input.normals[ixA]);
                     var tri1 = new Mesh.Triangle(ixA, points.Count - 3, points.Count - 2);

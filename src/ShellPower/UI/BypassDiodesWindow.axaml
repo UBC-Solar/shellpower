@@ -1,0 +1,29 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Class="SSCP.ShellPower.BypassDiodesWindow"
+    Width="380" Height="180"
+    Title="Bypass Diodes">
+    <Border Padding="12">
+        <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="150,*">
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Forward drop (V)"/>
+            <TextBox  x:Name="textBoxFwdDrop"
+                      Grid.Row="0" Grid.Column="1"
+                      TextChanged="TextBoxFwdDrop_TextChanged"/>
+
+            <TextBlock x:Name="labelStatus"
+                       Grid.Row="1" Grid.ColumnSpan="2"
+                       Margin="0,8,0,0"
+                       Foreground="OrangeRed"/>
+
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,12,0,0"
+                        Spacing="8">
+                <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
+                <Button x:Name="buttonOK"     Content="OK"     Click="ButtonOK_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

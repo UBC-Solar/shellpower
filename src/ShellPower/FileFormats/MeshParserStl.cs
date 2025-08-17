@@ -5,6 +5,7 @@ using System.Text;
 using System.IO;
 using System.Diagnostics;
 using OpenTK;
+using System.Numerics;
 
 namespace SSCP.ShellPower {
     public class MeshParserStl : IMeshParser {
@@ -76,7 +77,7 @@ namespace SSCP.ShellPower {
 
             // get all the averaged vertex normals and set them to unit length
             for(int i = 0; i < norms.Count; i++){
-                float len = norms[i].Length;
+                float len = norms[i].Length();
                 if (len == 0) {
                     norms[i] = new Vector3(1, 0, 0);
                 } else {

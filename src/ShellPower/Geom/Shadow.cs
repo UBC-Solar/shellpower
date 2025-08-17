@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
-using OpenTK;
+// using OpenTK;
+using System.Numerics;
 
 namespace SSCP.ShellPower {
     public class Shadow {
@@ -69,7 +70,8 @@ namespace SSCP.ShellPower {
         }
 
         public void ComputeShadows() {
-            LightXYZ = Light.Xyz / (Light.W + 0.01f);
+            LightXYZ = new System.Numerics.Vector3(Light.X, Light.Y, Light.Z) 
+                       / (Light.W + 0.01f);
             ComputeSilhouette();
         }
         
@@ -129,8 +131,8 @@ namespace SSCP.ShellPower {
             var normal = Vector3.Cross(
                 Mesh.points[triangle.vertexB] - Mesh.points[triangle.vertexA],
                 Mesh.points[triangle.vertexC] - Mesh.points[triangle.vertexA]);
-            normal.Normalize();
-            return normal;
+
+            return Vector3.Normalize(normal);
         }
 
         /// <summary>

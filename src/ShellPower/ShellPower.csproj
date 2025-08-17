@@ -1,289 +1,42 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <ProjectType>Local</ProjectType>
-    <ProductVersion>8.0.50727</ProductVersion>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{9BBCA539-0000-0000-0000-000000000000}</ProjectGuid>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ApplicationIcon>
-    </ApplicationIcon>
-    <AssemblyKeyContainerName>
-    </AssemblyKeyContainerName>
-    <AssemblyName>ShellPower</AssemblyName>
-    <DefaultClientScript>JScript</DefaultClientScript>
-    <DefaultHTMLPageLayout>Grid</DefaultHTMLPageLayout>
-    <DefaultTargetSchema>IE50</DefaultTargetSchema>
-    <DelaySign>false</DelaySign>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <OutputType>WinExe</OutputType>
-    <AppDesignerFolder>
-    </AppDesignerFolder>
-    <RootNamespace>Stanford.SSCP.ShellPower</RootNamespace>
-    <StartupObject>
-    </StartupObject>
-    <StartArguments>
-    </StartArguments>
-    <FileUpgradeFlags>
-    </FileUpgradeFlags>
-    <UpgradeBackupLocation>
-    </UpgradeBackupLocation>
-    <OldToolsVersion>2.0</OldToolsVersion>
-    <IsWebBootstrapper>false</IsWebBootstrapper>
-    <PublishUrl>publish\</PublishUrl>
-    <Install>true</Install>
-    <InstallFrom>Disk</InstallFrom>
-    <UpdateEnabled>false</UpdateEnabled>
-    <UpdateMode>Foreground</UpdateMode>
-    <UpdateInterval>7</UpdateInterval>
-    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
-    <UpdatePeriodically>false</UpdatePeriodically>
-    <UpdateRequired>false</UpdateRequired>
-    <MapFileExtensions>true</MapFileExtensions>
-    <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
-    <UseApplicationTrust>false</UseApplicationTrust>
-    <BootstrapperEnabled>true</BootstrapperEnabled>
+    <!-- Produce a console/GL window executable -->
+    <OutputType>Exe</OutputType>
+    <!-- Cross-platform .NET 9 -->
+    <TargetFramework>net9.0</TargetFramework>
+    <!-- Keep your old x86 setting if you need it -->
+<!--    <PlatformTarget>x86</PlatformTarget>-->
+    <!-- Optional: enable nullable reference checks -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAvalonia>true</UseAvalonia> <!-- IMPORTANT -->
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <BaseAddress>285212672</BaseAddress>
-    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
-    <ConfigurationOverrideFile>
-    </ConfigurationOverrideFile>
-    <DefineConstants>DEBUG;TRACE;</DefineConstants>
-    <DocumentationFile>
-    </DocumentationFile>
-    <DebugSymbols>True</DebugSymbols>
-    <FileAlignment>4096</FileAlignment>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <RegisterForComInterop>False</RegisterForComInterop>
-    <RemoveIntegerChecks>False</RemoveIntegerChecks>
-    <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
-    <WarningLevel>4</WarningLevel>
-    <NoStdLib>False</NoStdLib>
-    <NoWarn>
-    </NoWarn>
-    <PlatformTarget>x86</PlatformTarget>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <BaseAddress>285212672</BaseAddress>
-    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
-    <ConfigurationOverrideFile>
-    </ConfigurationOverrideFile>
-    <DefineConstants>TRACE;</DefineConstants>
-    <DocumentationFile>
-    </DocumentationFile>
-    <DebugSymbols>False</DebugSymbols>
-    <FileAlignment>4096</FileAlignment>
-    <Optimize>True</Optimize>
-    <OutputPath>..\..\Binaries\QuickStart\Release\</OutputPath>
-    <RegisterForComInterop>False</RegisterForComInterop>
-    <RemoveIntegerChecks>False</RemoveIntegerChecks>
-    <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
-    <WarningLevel>4</WarningLevel>
-    <NoStdLib>False</NoStdLib>
-    <NoWarn>
-    </NoWarn>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\packages\Newtonsoft.Json.6.0.6\lib\net40\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK, Version=1.0.0.201, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\OpenTK\1.0\Binaries\OpenTK\Release\OpenTK.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Compatibility, Version=1.0.0.201, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\OpenTK\1.0\Binaries\OpenTK\Release\OpenTK.Compatibility.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.GLControl, Version=1.0.0.201, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\OpenTK\1.0\Binaries\OpenTK\Release\OpenTK.GLControl.dll</HintPath>
-    </Reference>
-    <Reference Include="System">
-      <Name>System</Name>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="System.Data" />
-    <Reference Include="System.DirectoryServices" />
-    <Reference Include="System.Drawing">
-      <Name>System.Drawing</Name>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="System.Runtime.Serialization" />
-    <Reference Include="System.Web.Extensions" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Windows.Forms.DataVisualization" />
-    <Reference Include="System.Windows.Forms.DataVisualization.Design" />
-    <Reference Include="System.Windows.Input.Manipulations" />
-    <Reference Include="System.XML" />
+    <!-- OpenTK 5 (preview) cross-platform windowing & audio -->
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.4" />
+    <PackageReference Include="OpenTK" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Core" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Mathematics" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Windowing.Common" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Windowing.GraphicsLibraryFramework" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Audio.OpenAL" Version="4.8.0" />
+    <PackageReference Include="OpenTK.Graphics" Version="4.8.0" />  <!-- :contentReference[oaicite:0]{index=0} -->
+    <PackageReference Include="Avalonia" Version="11.*" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.*" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="11.*" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="System.Text.Json" Version="8.*" />
+
+    <!-- Your other NuGets -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
+
   <ItemGroup>
-    <BootstrapperPackage Include=".NETFramework,Version=v4.0">
-      <Visible>False</Visible>
-      <ProductName>Microsoft .NET Framework 4 %28x86 and x64%29</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1 Client Profile</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
-      <Visible>False</Visible>
-      <ProductName>Windows Installer 3.1</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
+    <Compile Update="UI\ArrayLayoutControl.cs">
+      <DependentUpon>ArrayLayoutControl.axaml</DependentUpon>
+    </Compile>
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="FileFormats\MeshParser3DXml.cs" />
-    <Compile Include="FileFormats\IMeshParser.cs" />
-    <Compile Include="FileFormats\MeshParserStl.cs" />
-    <Compile Include="Geom\IBoundingBox.cs" />
-    <Compile Include="Geom\IVolume.cs" />
-    <Compile Include="Geom\Mesh.cs" />
-    <Compile Include="Geom\MeshUtils.cs" />
-    <Compile Include="Geom\Polygon2.cs" />
-    <Compile Include="Geom\Quad3.cs" />
-    <Compile Include="Geom\IArea.cs" />
-    <Compile Include="Geom\Shadow.cs" />
-    <Compile Include="Geom\ShadowVolume.cs" />
-    <Compile Include="Simulation\ArraySimulator.cs" />
-    <Compile Include="Simulation\CellSimulator.cs" />
-    <Compile Include="Simulation\IVTrace.cs" />
-    <Compile Include="Simulation\StringSimulator.cs" />
-    <Compile Include="SolPos\PosData.cs" />
-    <Compile Include="SolPos\SolPos.cs" />
-    <Compile Include="Spec\ArraySpec.cs" />
-    <Compile Include="Spec\CellSpec.cs" />
-    <Compile Include="Math\Constants.cs" />
-    <Compile Include="Spec\BoundsSpec.cs" />
-    <Compile Include="Spec\DiodeSpec.cs" />
-    <Compile Include="Spec\JsonSpec.cs" />
-    <Compile Include="Spec\JsonSpecConverter.cs" />
-    <Compile Include="Sprites\MeshTriangle.cs" />
-    <Compile Include="UI\ArraySimInputControl.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\ArraySimInputControl.Designer.cs">
-      <DependentUpon>ArraySimInputControl.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Utilities\Cache.cs" />
-    <Compile Include="Utilities\ColorUtils.cs" />
-    <Compile Include="Utilities\GLUtils.cs" />
-    <Compile Include="Utilities\Logger.cs" />
-    <Compile Include="Geom\KDTree.cs" />
-    <Compile Include="Utilities\Pair.cs" />
-    <Compile Include="Utilities\Web.cs" />
-    <Compile Include="UI\ArrayLayoutControl.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\ArrayLayoutControl.Designer.cs">
-      <DependentUpon>ArrayLayoutControl.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\ArrayLayoutForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\ArrayLayoutForm.Designer.cs">
-      <DependentUpon>ArrayLayoutForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\ArrayModelControl.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="Math\Astro.cs" />
-    <Compile Include="Utilities\GeoNames.cs" />
-    <Compile Include="UI\ArrayDimensionsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\ArrayDimensionsForm.Designer.cs">
-      <DependentUpon>ArrayDimensionsForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\BypassDiodesForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\BypassDiodesForm.Designer.cs">
-      <DependentUpon>BypassDiodesForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\CellParamsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\CellParamsForm.Designer.cs">
-      <DependentUpon>CellParamsForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\IVTraceForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\IVTraceForm.Designer.cs">
-      <DependentUpon>IVTraceForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.Designer.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Program.cs" />
-    <Compile Include="Simulation\ArraySimulationIO.cs" />
-    <Compile Include="Sprites\MeshSprite.cs" />
-    <Compile Include="Sprites\ShadowMeshSprite.cs" />
-    <Compile Include="Sprites\Sprite.cs" />
-    <Compile Include="ThirdParty\TexLib.cs" />
-    <Compile Include="Geom\Matrix3.cs" />
-    <Compile Include="UI\RefreshListBox.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="UI\SimpleGraph.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\SimpleGraph.Designer.cs">
-      <DependentUpon>SimpleGraph.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\ViewUtil.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="UI\ArrayLayoutForm.resx">
-      <DependentUpon>ArrayLayoutForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\ArrayDimensionsForm.resx">
-      <DependentUpon>ArrayDimensionsForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\ArraySimInputControl.resx">
-      <DependentUpon>ArraySimInputControl.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\BypassDiodesForm.resx">
-      <DependentUpon>BypassDiodesForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\CellParamsForm.resx">
-      <DependentUpon>CellParamsForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\IVTraceForm.resx">
-      <DependentUpon>IVTraceForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\MainForm.resx">
-      <DependentUpon>MainForm.cs</DependentUpon>
-    </EmbeddedResource>
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="README.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <Import Project="$(MSBuildBinPath)\Microsoft.CSHARP.Targets" />
-  <PropertyGroup>
-    <PreBuildEvent>
-    </PreBuildEvent>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
+
+  <!-- All .cs source files and .resx resources in the folder are included by default. -->
 </Project>

@@ -1,57 +1,49 @@
-﻿using System.Diagnostics;
-using OpenTK;
-using OpenTK.Graphics.OpenGL;
+﻿using System.Collections.Generic;
+using OpenTK.Mathematics;
 
 namespace SSCP.ShellPower {
     public abstract class Sprite {
-        public Vector4 Position {
-            get {
-                return Transform.Column3;
-            }
-            set {
-                transform.M14 = value.X;
-                transform.M24 = value.Y;
-                transform.M34 = value.Z;
-                transform.M44 = value.W;
-            }
-        }
-        Matrix4 transform;
+        // CPU-side model transform for this sprite
+        private Matrix4 transform = Matrix4.Identity;
         public Matrix4 Transform {
-            get { return transform; }
-            set { transform = value; }
+            get => transform;
+            set => transform = value;
         }
-        public Vector3 Up {
-            get {
-                return Vector3.Transform(new Vector3(0, 1, 0), Transform);
-            }
-        }
-        public Vector3 Right {
-            get {
-                return Vector3.Transform(new Vector3(1, 0, 0), Transform);
-            }
-        }
-        public Vector3 Forward {
-            get {
-                return Vector3.Transform(new Vector3(0, 0, 1), Transform);
-            }
-        }
-        public Sprite() {
-            Transform = Matrix4.Identity;
-        }
-        public abstract void Render();
-        public virtual void Initialize() { }
-        public virtual void Dispose() {
 
+        // Translation convenience (OpenTK uses M41..M43 for translation)
+        public Vector4 Position {
+            get => new Vector4(transform.M41, transform.M42, transform.M43, transform.M44);
+            set {
+                transform.M41 = value.X;
+                transform.M42 = value.Y;
+                transform.M43 = value.Z;
+                transform.M44 = value.W == 0 ? 1f : value.W; // keep w sane
+            }
         }
+
+        // -------- CPU-side model matrix stack (replacement for GL matrix stack) --------
+        private static readonly Stack<Matrix4> s_modelStack = new Stack<Matrix4>(new[] { Matrix4.Identity });
+
+        /// Current composed model matrix (top of stack)
+        public static Matrix4 CurrentModel => s_modelStack.Peek();
+
+        /// Emulate your old PushTransform(): multiply current by this sprite's Transform and push
         public void PushTransform() {
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.PushMatrix();
-            GL.MultTransposeMatrix(ref transform);
+            var top = s_modelStack.Peek();
+            s_modelStack.Push(top * transform);  // world = world * local
         }
+
+        /// Emulate your old PopTransform(): discard last pushed model
         public void PopTransform() {
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.PopMatrix();
+            if (s_modelStack.Count > 1) s_modelStack.Pop();
         }
+
+        public virtual void Initialize() { }
+        public virtual void Dispose() { }
+
+        // Your geometry entry point(s)
+        public abstract void RenderMesh();
+        public virtual void RenderShadowOutline() { }
+        public virtual void RenderShadowVolume() { }
     }
 }
-

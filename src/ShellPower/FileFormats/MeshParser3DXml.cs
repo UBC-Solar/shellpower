@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Xml;
 using OpenTK;
+using System.Numerics;
 
 namespace SSCP.ShellPower {
     public class MeshParser3DXml : IMeshParser {

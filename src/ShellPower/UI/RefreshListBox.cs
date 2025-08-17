@@ -1,16 +1,18 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Windows.Forms;
+using Avalonia.Controls;
 
 namespace SSCP.ShellPower {
     public class RefreshListBox : ListBox {
-        public new void RefreshItem(int index) {
-            base.RefreshItem(index);
+        // In Avalonia, ListBox redraws automatically when Items changes.
+        // But if you really need to force a redraw, you can call InvalidateVisual().
+
+        public void RefreshItem(int index) {
+            // No per-item refresh API — force whole control to redraw.
+            InvalidateVisual();
         }
-        public new void RefreshItems() {
-            base.RefreshItems();
+
+        public void RefreshItems() {
+            // Same as above.
+            InvalidateVisual();
         }
     }
 }

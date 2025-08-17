@@ -1,31 +1,38 @@
 ﻿using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Web.Script.Serialization;
-using System.Xml;
+using System.Text.Json;
 
-namespace SSCP.ShellPower {
+namespace SSCP.ShellPower
+{
     /// <summary>
     /// Convenience functions for accessing the web.
-    /// TODO: GetHtml, overloads that take POST data
     /// </summary>
-    public static class Web {
-        public static string Get(string url) {
+    public static class Web
+    {
+        public static string Get(string url)
+        {
             Debug.WriteLine("Getting " + url);
-            var stream = GetStream(url);
-            string content = new StreamReader(stream).ReadToEnd();
-            return content;
+            using var stream = GetStream(url);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
-        public static Stream GetStream(string url) {
+
+        public static Stream GetStream(string url)
+        {
             var request = WebRequest.Create(url);
             var response = request.GetResponse();
             return response.GetResponseStream();
         }
-        public static T GetJson<T>(string url) {
+
+        public static T GetJson<T>(string url)
+        {
             var json = Get(url);
-            var serializer = new JavaScriptSerializer();
-            var ret = serializer.Deserialize<T>(json);
-            return ret;
+            // System.Text.Json by default is case-sensitive
+            return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            })!;
         }
     }
 }

@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shellPower="clr-namespace:SSCP.ShellPower"
+        x:Class="SSCP.ShellPower.MainWindow"
+        Width="1100" Height="700" Title="ShellPower">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="File">
+                <MenuItem Header="Open Model..." Click="OnOpenModel"/>
+                <MenuItem Header="Open Layout Texture..." Click="OnOpenLayout"/>
+                <MenuItem Header="Open Parameters..." Click="OnOpenParameters"/>
+                <MenuItem Header="Save Parameters..." Click="OnSaveParameters"/>
+                <MenuItem Header="Save Layout Texture..." Click="OnSaveLayoutTexture"/>
+                <Separator/>
+                <MenuItem Header="Exit" Command="{Binding $parent[Window].Close}"/>
+            </MenuItem>
+            <MenuItem Header="Sim">
+                <MenuItem Header="Run (single)" Click="OnRunTimeAverage"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid ColumnDefinitions="2*,*" RowDefinitions="Auto,*,Auto">
+            <TextBlock x:Name="LabelArrPower" Grid.ColumnSpan="2" Margin="8"/>
+
+            <shellPower:GLControl x:Name="GlView" Grid.Row="1" Margin="8"/>
+
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="8" Spacing="8">
+                <Image x:Name="OutputArrayLayoutImage" Stretch="Uniform" Height="200"/>
+                <ListBox x:Name="OutputStringsList" Height="200"/>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <DatePicker x:Name="StartDate"/>
+                    <TimePicker x:Name="StartTime"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <DatePicker x:Name="EndDate"/>
+                    <TimePicker x:Name="EndTime"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="BtnSimulate" Content="Simulate"/>
+                    <Button x:Name="BtnSaveRender" Content="Save Render"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

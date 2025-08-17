@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Drawing;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace SSCP.ShellPower {
     public static class JsonSpecConverter {
@@ -18,7 +20,7 @@ namespace SSCP.ShellPower {
             File.WriteAllText(filename, json, Encoding.UTF8);
         }
 
-        public static ArraySimulationStepInput FromJson(JsonSpec spec, Mesh mesh, Bitmap texture) {
+        public static ArraySimulationStepInput FromJson(JsonSpec spec, Mesh mesh, Image<Rgba32> texture) {
             ArraySimulationStepInput input = new ArraySimulationStepInput();
             input.Heading = DegToRad(spec.Environment.HeadingDeg);
             input.IndirectIrradiance = spec.Environment.IndirectIrradianceWM2;
