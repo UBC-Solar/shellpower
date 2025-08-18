@@ -60,6 +60,12 @@ namespace SSCP.ShellPower
             GL.TextureParameter(textureId, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
             GL.TextureParameter(textureId, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         }
+        
+        private static Image<Rgba32> LoadTexture(string filename)
+        {
+            // ImageSharp auto-detects the format and decodes into RGBA8
+            return Image.Load<Rgba32>(filename);
+        }
 
         /// <summary>
         /// Upload an ImageSharp RGBA texture to the given texture object.

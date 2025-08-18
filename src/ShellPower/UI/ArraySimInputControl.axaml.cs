@@ -22,9 +22,8 @@ public partial class ArraySimInputControl : UserControl
 
     public ArraySimInputControl()
     {
-        InitializeComponent();
-
-        // Hook change handlers (text boxes fire on LostFocus; sliders on PropertyChanged)
+        InitializeComponent();   // this now calls the GENERATED method
+        // Hook change handlers AFTER this line (as you do)
         LatBox.LostFocus += AnyInputChanged;
         LonBox.LostFocus += AnyInputChanged;
         TzOffsetBox.LostFocus += AnyInputChanged;
@@ -38,11 +37,6 @@ public partial class ArraySimInputControl : UserControl
 
         UtcDatePicker.SelectedDateChanged += (_, __) => AnyInputChanged(null!, null!);
         UtcTimePicker.SelectedTimeChanged += (_, __) => AnyInputChanged(null!, null!);
-    }
-
-    private void InitializeComponent()
-    {
-        AvaloniaXamlLoader.Load(this);
     }
 
     public void UpdateView()

@@ -1,45 +1,163 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:shellPower="clr-namespace:SSCP.ShellPower"
-        x:Class="SSCP.ShellPower.MainWindow"
-        Width="1100" Height="700" Title="ShellPower">
-    <DockPanel>
-        <Menu DockPanel.Dock="Top">
-            <MenuItem Header="File">
-                <MenuItem Header="Open Model..." Click="OnOpenModel"/>
-                <MenuItem Header="Open Layout Texture..." Click="OnOpenLayout"/>
-                <MenuItem Header="Open Parameters..." Click="OnOpenParameters"/>
-                <MenuItem Header="Save Parameters..." Click="OnSaveParameters"/>
-                <MenuItem Header="Save Layout Texture..." Click="OnSaveLayoutTexture"/>
-                <Separator/>
-                <MenuItem Header="Exit" Command="{Binding $parent[Window].Close}"/>
-            </MenuItem>
-            <MenuItem Header="Sim">
-                <MenuItem Header="Run (single)" Click="OnRunTimeAverage"/>
-            </MenuItem>
-        </Menu>
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:SSCP.ShellPower"
+    x:Class="SSCP.ShellPower.MainWindow"
+    Width="1000" Height="640"
+    Title="Stanford Solar Car Project - ShellPower">
+  <DockPanel>
+    <!-- Menu -->
+    <Menu DockPanel.Dock="Top">
+      <MenuItem Header="File">
+        <MenuItem Header="Open model" Click="OpenModel_Click"/>
+        <MenuItem Header="Open layout texture" Click="OpenLayoutTexture_Click"/>
+        <MenuItem Header="Save layout texture" Click="SaveLayoutTexture_Click"/>
+        <MenuItem Header="Open parameters" Click="OpenParameters_Click"/>
+        <MenuItem Header="Save parameters" Click="SaveParameters_Click"/>
+      </MenuItem>
+      <MenuItem Header="Edit">
+        <MenuItem Header="Layout" Click="Layout_Click"/>
+        <MenuItem Header="Layout texture dimensions" Click="LayoutTextureDimensions_Click"/>
+        <MenuItem Header="Cell parameters" Click="CellParameters_Click"/>
+        <MenuItem Header="Bypass diode parameters" Click="BypassDiodeParameters_Click"/>
+      </MenuItem>
+    </Menu>
 
-        <Grid ColumnDefinitions="2*,*" RowDefinitions="Auto,*,Auto">
-            <TextBlock x:Name="LabelArrPower" Grid.ColumnSpan="2" Margin="8"/>
+    <!-- Status bar substitute -->
+    <Border DockPanel.Dock="Bottom" Background="#202020" Padding="6">
+      <TextBlock x:Name="StatusText" Foreground="White"/>
+    </Border>
 
-            <shellPower:GLControl x:Name="GlView" Grid.Row="1" Margin="8"/>
+    <!-- Main Split: left tabs / right GL -->
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="380"/>
+        <ColumnDefinition Width="5"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Row="1" Grid.Column="1" Margin="8" Spacing="8">
-                <Image x:Name="OutputArrayLayoutImage" Stretch="Uniform" Height="200"/>
-                <ListBox x:Name="OutputStringsList" Height="200"/>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <DatePicker x:Name="StartDate"/>
-                    <TimePicker x:Name="StartTime"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <DatePicker x:Name="EndDate"/>
-                    <TimePicker x:Name="EndTime"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button x:Name="BtnSimulate" Content="Simulate"/>
-                    <Button x:Name="BtnSaveRender" Content="Save Render"/>
-                </StackPanel>
+      <!-- Left: Tabs -->
+      <TabControl Grid.Column="0" x:Name="LeftTabs">
+        <!-- Params tab -->
+        <TabItem Header="Params">
+          <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="4">
+            <local:ArraySimInputControl x:Name="SimInputControl" Grid.Row="1" Change="SimInputs_Change"/>
+
+            <!-- Bottom action row -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+              <Button x:Name="BtnSaveRender" Content="Save Render" Click="SaveRender_Click"/>
+              <Button x:Name="BtnSimulate" Content="Simulate" Click="Simulate_Click"/>
             </StackPanel>
-        </Grid>
-    </DockPanel>
+
+            <!-- Array power readout -->
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+              <TextBlock Text="Array power:"/>
+              <TextBlock x:Name="ArrayPowerText"/>
+            </StackPanel>
+            <Border Grid.Row="3" Margin="0,24,0,0">
+              <TextBlock x:Name="ArrayPowerDetails"/>
+            </Border>
+          </Grid>
+        </TabItem>
+
+        <!-- Outputs tab -->
+        <TabItem Header="Outputs">
+          <Grid RowDefinitions="*,5,*" Margin="4">
+            <!-- Top panel -->
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="2*"/>
+              </Grid.ColumnDefinitions>
+
+              <ListBox x:Name="OutputStringsList" SelectionChanged="OutputStringsList_SelectionChanged"/>
+
+              <StackPanel Grid.Column="2" Spacing="6">
+                <TextBlock Text="Performance of each string" FontWeight="Bold"/>
+                <TextBlock x:Name="OutputStringName" Text="(No string selected.)"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Insolation:"/>
+                  <TextBlock x:Name="OutputStringInsolation"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Output power:"/>
+                  <TextBlock x:Name="OutputStringPower"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="...perfect MPPT:"/>
+                  <TextBlock x:Name="OutputStringMPPT"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="...flattened:"/>
+                  <TextBlock x:Name="OutputStringFlattened"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Area:"/>
+                  <TextBlock x:Name="OutputStringArea"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="...shaded:"/>
+                  <TextBlock x:Name="OutputStringShaded"/>
+                </StackPanel>
+                <Button Content="Show IV Trace" HorizontalAlignment="Left" Click="ShowIVTrace_Click"/>
+              </StackPanel>
+            </Grid>
+
+            <GridSplitter Grid.Row="1" ResizeDirection="Rows" HorizontalAlignment="Stretch" Height="5" Background="#404040"/>
+
+            <!-- Bottom panel: layout preview -->
+            <local:ArrayLayoutControl x:Name="OutputArrayLayout" Grid.Row="2" Editable="False"/>
+          </Grid>
+        </TabItem>
+
+        <!-- Time-averaged sim tab -->
+        <TabItem Header="Time-averaged sim">
+          <StackPanel Margin="8" Spacing="8">
+            <TextBlock Text="Simulation" FontWeight="Bold"/>
+
+            <!-- Start/End (local) -->
+            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto" VerticalAlignment="Top" >
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Start date:" Margin="0,0,8,0"/>
+              <DatePicker x:Name="StartDate" Grid.Row="0" Grid.Column="1"/>
+              <TextBlock Grid.Row="0" Grid.Column="2" Text="Time:" Margin="8,0,8,0"/>
+              <TimePicker x:Name="StartTime" Grid.Row="0" Grid.Column="3"/>
+
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="End date:" Margin="0,8,8,0"/>
+              <DatePicker x:Name="EndDate" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0"/>
+              <TextBlock Grid.Row="1" Grid.Column="2" Text="Time:" Margin="8,8,8,0"/>
+              <TimePicker x:Name="EndTime" Grid.Row="1" Grid.Column="3" Margin="0,8,0,0"/>
+            </Grid>
+
+            <TextBlock Text="UTC: See timezone under Params"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+              <Button Content="Run" Click="RunTimeAveraged_Click"/>
+              <StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Avg power:"/>
+                  <TextBlock x:Name="LabelSimAvgPower"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="efficiency:"/>
+                  <TextBlock x:Name="LabelSimAvgEfficiency"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Total energy:"/>
+                  <TextBlock x:Name="LabelSimTotalEnergy"/>
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </TabItem>
+      </TabControl>
+
+      <!-- Vertical splitter -->
+      <GridSplitter Grid.Column="1" Width="5" Background="#404040"/>
+
+      <!-- Right: GL viewport -->
+      <local:ArrayModelControl x:Name="GLView" Grid.Column="2"/>
+    </Grid>
+  </DockPanel>
 </Window>

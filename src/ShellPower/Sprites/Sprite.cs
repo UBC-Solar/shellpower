@@ -28,13 +28,13 @@ namespace SSCP.ShellPower {
         public static Matrix4 CurrentModel => s_modelStack.Peek();
 
         /// Emulate your old PushTransform(): multiply current by this sprite's Transform and push
-        public void PushTransform() {
+        public virtual void PushTransform() {
             var top = s_modelStack.Peek();
             s_modelStack.Push(top * transform);  // world = world * local
         }
 
         /// Emulate your old PopTransform(): discard last pushed model
-        public void PopTransform() {
+        public virtual void PopTransform() {
             if (s_modelStack.Count > 1) s_modelStack.Pop();
         }
 
