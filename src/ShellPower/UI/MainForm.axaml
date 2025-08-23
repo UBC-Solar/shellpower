@@ -4,7 +4,7 @@
     xmlns:local="clr-namespace:SSCP.ShellPower"
     x:Class="SSCP.ShellPower.MainWindow"
     Width="1000" Height="640"
-    Title="Stanford Solar Car Project - ShellPower">
+    Title="Array Simulation">
   <DockPanel>
     <!-- Menu -->
     <Menu DockPanel.Dock="Top">
@@ -161,6 +161,10 @@
 
       <!-- Right: GL viewport -->
       <local:ArrayModelControl x:Name="GLView" Grid.Column="2"/>
+      
+      <!-- ... your normal UI ... -->
+      <local:ArraySimComputeSurface x:Name="SimSurface" Width="1" Height="1" IsVisible="False"/>
+
     </Grid>
   </DockPanel>
 </Window>

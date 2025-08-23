@@ -32,7 +32,7 @@ namespace SSCP.ShellPower {
             InitTimeAndPlace();
             InitializeArraySpec();
             InitializeConditions();
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
 
             // init subviews
             InitInputView();
@@ -152,7 +152,7 @@ namespace SSCP.ShellPower {
             GLView.Sprite = shadowSprite;
             simInput.Array.Mesh = mesh;
             Debug.WriteLine($"[SetModel] Sprite set. tris={mesh.triangles.Length}, bounds={mesh.BoundingBox.Min}..{mesh.BoundingBox.Max}");
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
         }
 
         /// <summary>
@@ -225,7 +225,7 @@ namespace SSCP.ShellPower {
                 await ShowErrorAsync("Error loading model", $"{ex.Message}\n\n{ex.StackTrace}");
             }
 
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
         }
 
         private async void OpenLayoutTexture_Click(object? sender, RoutedEventArgs e) {
@@ -245,7 +245,7 @@ namespace SSCP.ShellPower {
                 array.LayoutTexture = origTexture;
             }
             
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
         }
 
         private async void SaveLayoutTexture_Click(object? sender, RoutedEventArgs e) {
@@ -293,7 +293,7 @@ namespace SSCP.ShellPower {
             } catch (Exception ex) {
                 await ShowErrorAsync("Error loading model", ex.Message);
             }
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
         }
 
         private async void SaveParameters_Click(object? sender, RoutedEventArgs e) {
@@ -340,27 +340,39 @@ namespace SSCP.ShellPower {
         }
 
         private void SimInputs_Change(object? sender, EventArgs e) {
-            // CalculateSimStepGui();
+            CalculateSimStepGui();
         }
 
         private async void Simulate_Click(object? sender, RoutedEventArgs e) {
-            try {
-                InitSimulator();
-                var noon = simulator!.Simulate(simInput.Array, new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),
-                    simInput.Irradiance, simInput.IndirectIrradiance, simInput.Temperature);
-                var simOutput = simulator.Simulate(simInput);
+            try
+            {
+                // Build/refresh any non-GL state here (loading meshes, textures into ImageSharp, etc.)
+                // Do NOT touch simulator.EnsureGlResources() here; that runs inside the GL callbacks.
+
+                // “Noon” pass with explicit sun dir:
+                var noon = await SimSurface.RunOnceExplicitAsync(
+                    simInput.Array!,
+                    new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),   // your chosen direction (must be unit length)
+                    simInput.Irradiance,
+                    simInput.IndirectIrradiance,
+                    simInput.Temperature);
+
+                // Actual pass using ephemerides from simInput (GetSunDir inside ArraySimulator)
+                var simOutput = await SimSurface.RunOnceAsync(simInput);
+
                 double distortion = Math.Abs(noon.ArrayLitArea - simOutput.ArrayArea) / simOutput.ArrayArea;
 
                 // UI text
-                string boldLine = $"{simOutput.WattsOutput:0}W over {simOutput.ArrayArea:0.00}m² cell area";
-                string firstLine = $", {noon.ArrayLitArea:0.00}m² lit cells{(distortion > 0.01 ? " (MISMATCH)" : "")}, {noon.ArrayLitArea - simOutput.ArrayLitArea:0.00}m² shaded";
+                string boldLine   = $"{simOutput.WattsOutput:0}W over {simOutput.ArrayArea:0.00}m² cell area";
+                string firstLine  = $", {noon.ArrayLitArea:0.00}m² lit cells{(distortion > 0.01 ? " (MISMATCH)" : "")}, {noon.ArrayLitArea - simOutput.ArrayLitArea:0.00}m² shaded";
                 string secondLine = $"(Power breakdown: {simOutput.WattsInsolation:0}W {simOutput.WattsInsolation / noon.WattsInsolation * 100:0}% in, {simOutput.WattsOutputByCell:0}W {simOutput.WattsOutputByCell / noon.WattsOutputByCell * 100:0}% ideal mppt, {simOutput.WattsOutput:0}W {simOutput.WattsOutput / noon.WattsOutput * 100:0}% output)";
 
                 ArrayPowerText.Text = boldLine;
                 ArrayPowerDetails.Text = secondLine;
-
-                OutputStringsList.ItemsSource = simOutput.Strings; // assumes IList compatible
-            } catch (Exception ex) {
+                OutputStringsList.ItemsSource = simOutput.Strings; // your array is fine for IList
+            }
+            catch (Exception ex)
+            {
                 await ShowErrorAsync("Simulation error", ex.Message);
             }
         }

@@ -272,15 +272,13 @@ namespace SSCP.ShellPower {
                     GL.UniformMatrix4(_uViewProj, false, ref ident);
                     SetModelUniform(sms.Position); // centers mesh at origin
                     
-                    Vector3 sun = SunDirFromAzAlt(azDeg: 315f, altDeg: 30f);
-                    sms.Shadow.Light = new System.Numerics.Vector4(sun.X, sun.Y, sun.Z, 0f);
-                    sms.Shadow.ComputeShadows();
                     sms.RebuildOutlineBuffer();       // outline uses silhouette edges
                     sms.UpdateShadowVolumeVertices(); // volume uses same
+                    GL.Uniform3(_uSunDir, new Vector3(sms.Shadow.Light.X, sms.Shadow.Light.Y, sms.Shadow.Light.Z));       // after any SetUniforms()
                     
                     // ---- lambert state (no hiding) ----
                     SetMode(0);
-                    GL.Uniform3(_uSunDir, sun);       // after any SetUniforms()
+                    
                     SetModelUniform(sms.Position);    // translation only
                     GL.Enable(EnableCap.DepthTest);
                     GL.Enable(EnableCap.CullFace);

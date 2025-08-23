@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Numerics; // Vector3 for model-space math
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
+using Avalonia.Threading;
 using OpenTK.Graphics.OpenGL;   // GL API (core, cross-version)
 using OpenTK.Mathematics;       // Matrix4, Vector3 for GL
 using SixLabors.ImageSharp;
@@ -134,20 +135,19 @@ void main(){
                           _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             SetTexParams(_texCells);
 
-            // --- Watts texture (RGBA16F: more precision for encoded floats) ---
+            // --- Watts texture (RGBA8; matches 8-bit channel encode) ---
             _texWatts = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texWatts);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f,
-                          _w, _h, 0, PixelFormat.Rgba, PixelType.HalfFloat, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             SetTexParams(_texWatts);
 
-            // --- Area texture (RGBA16F) ---
+            // --- Area texture (RGBA8) ---
             _texArea = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texArea);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f,
-                          _w, _h, 0, PixelFormat.Rgba, PixelType.HalfFloat, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             SetTexParams(_texArea);
-
             // --- Depth texture (DEPTH24) ---
             _texDepth = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texDepth);
@@ -182,6 +182,18 @@ void main(){
 
             // Unbind to avoid accidental rendering
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        }
+        
+        private static void CheckShader(int sh, string stage)
+        {
+            GL.GetShader(sh, ShaderParameter.CompileStatus, out int ok);
+            if (ok == 0) throw new InvalidOperationException($"{stage} compile failed:\n{GL.GetShaderInfoLog(sh)}");
+        }
+
+        private static void CheckProgram(int prog)
+        {
+            GL.GetProgram(prog, GetProgramParameterName.LinkStatus, out int ok);
+            if (ok == 0) throw new InvalidOperationException($"Program link failed:\n{GL.GetProgramInfoLog(prog)}");
         }
 
         // Call this ONLY when the texture is already bound to `target`
@@ -237,8 +249,6 @@ void main(){
             if (array.LayoutTexture is null) throw new ArgumentException("No array layout (texture) loaded.");
             if (wPerM2Insolation < 0) throw new ArgumentException("Invalid insolation.");
             if (Math.Abs(sunDir.Length() - 1.0f) > 1e-3) throw new ArgumentException("Sun dir must be unit length.");
-            
-            
             
             EnsureGlResources();
 
@@ -338,14 +348,29 @@ void main(){
 
         public void UploadLayoutTexture(Image<Rgba32> img)
         {
+            // Ensure we have a single, tightly-packed RGBA buffer
+            var raw = new byte[img.Width * img.Height * 4];
+            img.CopyPixelDataTo(raw); // ImageSharp guarantees RGBA order for Rgba32
+
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _texArray);
 
-            var pixels = img.GetPixelMemoryGroup()[0].ToArray(); // get Rgba32[]
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, img.Width, img.Height, 0,
-                PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            // Allocate storage with a sized internal format
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                img.Width, img.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
 
-            SetTexParams(_texArray);
+            // Upload with alignment 1 so no row padding is assumed
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, img.Width, img.Height,
+                PixelFormat.Rgba, PixelType.UnsignedByte, raw);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4); // restore default
+
+            // No mipmaps expected (NEAREST), clamp & filters
+            SetTexParamsBound(TextureTarget.Texture2D);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBaseLevel, 0);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0);
+
+            GL.BindTexture(TextureTarget.Texture2D, 0);
         }
 
         private float[] ReadFloatTexture(FramebufferAttachment attachment, double scale)
@@ -358,8 +383,10 @@ void main(){
             try
             {
                 // Read directly into managed array
+                GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
                 GL.ReadPixels(0, 0, _w, _h, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
-
+                GL.PixelStore(PixelStoreParameter.PackAlignment, 4);
+                
                 float[] decoded = new float[_w * _h];
                 for (int i = 0; i < decoded.Length; i++)
                 {
@@ -387,7 +414,9 @@ void main(){
 
             var raw = new byte[_w * _h * 4];
             // Read directly into managed array
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
             GL.ReadPixels(0, 0, _w, _h, PixelFormat.Rgba, PixelType.UnsignedByte, raw);
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 4);
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
@@ -520,29 +549,112 @@ void main(){
         }
     }
 
-    // public sealed class ArraySimComputeSurface : OpenGlControlBase
-    // {
-    //     private readonly ArraySimulator _sim = new();
-    //     public ArraySimulationStepInput? PendingInput { get; set; }
-    //     public ArraySimulationStepOutput? LastOutput { get; private set; }
-    //
-    //     // protected override void OnOpenGlInit(GlInterface gl, int fb) { }
-    //     // protected override void OnOpenGlDeinit(GlInterface gl, int fb) { }
-    //
-    //     protected override unsafe void OnOpenGlRender(GlInterface gl, int fb)
-    //     {
-    //         _sim.EnsureGlResources();
-    //         if (PendingInput != null)
-    //         {
-    //             try { LastOutput = _sim.Simulate(PendingInput); }
-    //             catch (Exception ex) { Debug.WriteLine(ex); }
-    //             finally { PendingInput = null; }
-    //         }
-    //         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-    //         GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
-    //         GL.ClearColor(0, 0, 0, 1);
-    //         GL.Clear(ClearBufferMask.ColorBufferBit);
-    //         // TODO: blit/visualize if desired
-    //     }
-    // }
+    public sealed class ArraySimComputeSurface : OpenGlControlBase
+    {
+        private readonly ArraySimulator _sim = new();
+        private bool _glLoaded;
+
+        // one job at a time
+        // private ArraySimulationStepInput? _pending;
+        // private TaskCompletionSource<ArraySimulationStepOutput>? _tcs;
+
+        // Adapter: let OpenTK resolve procs from Avalonia’s GlInterface
+        private sealed class OpenTKBindingsContext : OpenTK.IBindingsContext
+        {
+            private readonly GlInterface _gl;
+            public OpenTKBindingsContext(GlInterface gl) => _gl = gl;
+            public IntPtr GetProcAddress(string procName) => _gl.GetProcAddress(procName);
+        }
+        
+        public Task<ArraySimulationStepOutput> RunOnceAsync(ArraySimulationStepInput input)
+        {
+            if (_tcs != null) throw new InvalidOperationException("A simulation is already running.");
+            _pending = input;
+            _explicit = null;
+            _tcs = new TaskCompletionSource<ArraySimulationStepOutput>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Dispatcher.UIThread.Post(InvalidateVisual);
+            return _tcs.Task;
+        }
+
+        public Task<ArraySimulationStepOutput> RunOnceExplicitAsync(
+            ArraySpec array, System.Numerics.Vector3 sunDir, double irr, double indirect, double temp)
+        {
+            if (_tcs != null) throw new InvalidOperationException("A simulation is already running.");
+            _pending = null;
+            _explicit = (array, sunDir, irr, indirect, temp);
+            _tcs = new TaskCompletionSource<ArraySimulationStepOutput>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Dispatcher.UIThread.Post(InvalidateVisual);
+            return _tcs.Task;
+        }
+
+// add these fields
+        private ArraySimulationStepInput? _pending;
+        private (ArraySpec arr, System.Numerics.Vector3 dir, double irr, double indir, double temp)? _explicit;
+        private TaskCompletionSource<ArraySimulationStepOutput>? _tcs;
+
+
+        protected override void OnOpenGlInit(GlInterface gl)
+        {
+            if (_glLoaded) return;
+            // Wire OpenTK’s GL loader to Avalonia’s context
+            OpenTK.Graphics.OpenGL.GL.LoadBindings(new OpenTKBindingsContext(gl));
+
+            // Basic state you want once
+            GL.Disable(EnableCap.Blend);
+            GL.Enable(EnableCap.DepthTest);
+            GL.DepthFunc(DepthFunction.Lequal);
+            GL.Enable(EnableCap.CullFace);
+            GL.CullFace(CullFaceMode.Back);
+
+            // Create GL resources owned by the simulator while context is current
+            _sim.EnsureGlResources();
+
+            _glLoaded = true;
+        }
+
+        protected override void OnOpenGlDeinit(GlInterface gl)
+        {
+            // If you add explicit GL deletion in ArraySimulator, you can call it here
+        }
+
+        protected override void OnOpenGlRender(GlInterface gl, int fb)
+        {
+            try
+            {
+                if (_pending != null)
+                {
+                    var out1 = _sim.Simulate(_pending);
+                    _tcs?.TrySetResult(out1);
+                }
+                else if (_explicit != null)
+                {
+                    var (arr, dir, irr, indir, temp) = _explicit.Value;
+                    var out2 = _sim.Simulate(arr, dir, irr, indir, temp);
+                    _tcs?.TrySetResult(out2);
+                }
+                else
+                {
+                    // nothing queued; clear default FB for Avalonia’s sake
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                    GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
+                    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+                }
+            }
+            catch (Exception ex)
+            {
+                _tcs?.TrySetException(ex);
+            }
+            finally
+            {
+                _pending = null;
+                _explicit = null;
+                _tcs = null;
+
+                // leave the default FB in a clean state
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
+                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            }
+        }
+    }
 }
