@@ -11,7 +11,9 @@ using System.Runtime.InteropServices;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Avalonia.Rendering;
+using SixLabors.ImageSharp.Advanced;
 using Point = Avalonia.Point;
+using SixLabors.ImageSharp.Processing; // <= add this
 
 namespace SSCP.ShellPower {
     public class ArrayModelControl : OpenGlControlBase {
@@ -37,6 +39,13 @@ namespace SSCP.ShellPower {
         private int _uniformSolarCells, _uniformSunDirection;
         private int _shaderProg = 0;
         private int _texArray = 0;
+        
+        // uniforms
+        private int _uX0, _uX1, _uZ0, _uZ1;
+        private int _uSunDir, _uSampler;
+        private int _uViewProj, _uModel;
+        private int _uMode, _uColor;
+
 
         /* public model/view properties */
         private Sprite? _sprite;
@@ -47,6 +56,7 @@ namespace SSCP.ShellPower {
                 if (_sprite is ShadowMeshSprite s) {
                     double arrayMaxDim = (s.BoundingBox.Max - s.BoundingBox.Min).Length();
                     _zoom = Math.Max(1e-3, arrayMaxDim * 1.8);
+                    Debug.WriteLine($"[ArrayModelControl] Sprite assigned. zoom={_zoom:0.###}, bbox={s.BoundingBox.Min}..{s.BoundingBox.Max}");
                 }
             }
         }
@@ -89,8 +99,28 @@ namespace SSCP.ShellPower {
 
         // ---------- GL lifecycle ----------
         protected override void OnOpenGlInit(GlInterface gl) {
+            
             GL.LoadBindings(new OpenTKBindingsContext(gl));
+            
+            try
+            {
+                // Works on macOS via ARB_debug_output if present
+                var exts = GL.GetString(StringName.Extensions);
+                if (exts?.Contains("GL_KHR_debug") == true || exts?.Contains("GL_ARB_debug_output") == true)
+                {
+                    GL.Enable(EnableCap.DebugOutput);
+                    GL.Enable(EnableCap.DebugOutputSynchronous);
+                    _debugProc ??= DebugCallback;
+                    GL.DebugMessageCallback(_debugProc, IntPtr.Zero);
+                }
+            }
+            catch { /* ignore if unsupported */ }
 
+            
+            Debug.WriteLine($"GL Version: {GL.GetString(StringName.Version)}");
+            Debug.WriteLine($"GLSL Version: {GL.GetString(StringName.ShadingLanguageVersion)}");
+            Debug.WriteLine($"Vendor: {GL.GetString(StringName.Vendor)} Renderer: {GL.GetString(StringName.Renderer)}");
+            
             // depth, cull, blending
             GL.Enable(EnableCap.DepthTest);
             GL.DepthFunc(DepthFunction.Lequal);
@@ -118,55 +148,181 @@ namespace SSCP.ShellPower {
             _glReady = false;
         }
 
-        protected override void OnOpenGlRender(GlInterface gl, int framebuffer) {
+        protected override void OnOpenGlRender(GlInterface gl, int framebuffer)
+        {
             if (!_glReady) return;
+            
+            GL.ClearColor(0.10f, 0.10f, 0.12f, 1f);
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            
+            GL.Disable(EnableCap.DepthTest);
+            GL.UseProgram(_shaderProg);
+
+// Upload an identity uViewProj / uModel so clip-space positions work directly
+            var ident = OpenTK.Mathematics.Matrix4.Identity;
+            GL.UniformMatrix4(_uViewProj, false, ref ident);
+            GL.UniformMatrix4(_uModel, false, ref ident);
+            GL.Uniform1(_uMode, 1);
+            GL.Uniform4(_uColor, 0.2f, 0.8f, 0.4f, 1f);
+
+// Quick-and-dirty immediate buffer (one frame) just to see something
+            int vao = GL.GenVertexArray();
+            int vbo = GL.GenBuffer();
+            GL.BindVertexArray(vao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+            float[] verts = {
+                -0.5f, -0.5f, 0f,
+                0.5f, -0.5f, 0f,
+                0.0f,  0.5f, 0f
+            };
+            GL.BufferData(BufferTarget.ArrayBuffer, verts.Length * sizeof(float), verts, BufferUsageHint.StreamDraw);
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+            GL.DisableVertexAttribArray(0);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+            GL.BindVertexArray(0);
+            GL.DeleteBuffer(vbo);
+            GL.DeleteVertexArray(vao);
+
+            GL.Enable(EnableCap.DepthTest);
+
             var start = DateTime.Now;
 
-            try {
-                // Bind Avalonia-provided FBO (never assume 0)
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+            try
+            {
+                // Bind shader program
+                GL.UseProgram(_shaderProg);
+                
+                // --- 🔎 DEBUG BLOCK GOES HERE ---
+                int currentProgram;
+                GL.GetInteger(GetPName.CurrentProgram, out currentProgram);
+                // Debug.WriteLine($"Current program={currentProgram}, expected={_shaderProg}");
 
-                // Viewport uses pixel size (accounts for DPI)
+                // if (_uViewProj >= 0)
+                //     Debug.WriteLine($"uViewProj loc={_uViewProj}");
+                // else
+                //     Debug.WriteLine("Warning: uViewProj invalid");
+
+                // if (_uModel >= 0)
+                //     Debug.WriteLine($"uModel loc={_uModel}");
+                // else
+                //     Debug.WriteLine("Warning: uModel invalid");
+                //
+                // if (_uSampler >= 0)
+                //     Debug.WriteLine($"uSampler loc={_uSampler}");
+                // else
+                //     Debug.WriteLine("Warning: uSampler invalid");
+
+                var errCheck = GL.GetError();
+                if (errCheck != ErrorCode.NoError)
+                    Debug.WriteLine($"GL error immediately after UseProgram: {errCheck}");
+                // --- END DEBUG BLOCK ---
+
+                // viewport/proj
                 var px = GetFramebufferPixelSize();
                 GL.Viewport(0, 0, px.Width, px.Height);
+                SetViewProjUniform(px);
 
-                // Clear
-                GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
-                GL.ClearColor(0f, 0f, 0.1f, 1f);
-                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+                // uniforms (bounds + sun direction)
+                SetUniforms();
+
+                // Make sure texture is uploaded + bound
+                SetTexture();
+
+                // --- EXTRA DEBUG ---
+                // Bind texture again explicitly
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, _texArray);
+                GL.Uniform1(_uSampler, 0);
+
+                int boundTex;
+                GL.GetInteger(GetPName.TextureBinding2D, out boundTex);
+                // Debug.WriteLine($"[Render] texId={_texArray}, boundTex={boundTex}");
+
+                var err = GL.GetError();
+                if (err != ErrorCode.NoError)
+                    Debug.WriteLine($"[Render] GL error before draw: {err}");
+                // --- END DEBUG ---
 
                 // Render
-                if (Sprite != null && Array != null) {
-                    SetModelViewCamera();
-                    GLUtils.SetCameraProjectionPerspective(px.Width, px.Height);
+                if (Sprite is ShadowMeshSprite sms)
+                {
+                    sms.EnsureGlResourcesCreated();   // ensure VAOs/VBOs only when context is current
 
-                    Sprite.PushTransform();
+                    // Mesh (textured/lambert)
+                    SetMode(0);
+                    SetModelUniform(sms.Position);
+                    
+                    // Debug before draw
+                    err = GL.GetError();
+                    if (err != ErrorCode.NoError)
+                        Debug.WriteLine($"GL error pre-RenderMesh: {err}");
 
-                    GL.UseProgram(_shaderProg);
-                    SetUniforms();
-                    SetTexture();
-                    Sprite.RenderMesh();
+                    sms.RenderMesh();
 
-                    GL.UseProgram(0);
-                    GL.BindTexture(TextureTarget.Texture2D, 0);
+                    err = GL.GetError();
+                    if (err != ErrorCode.NoError)
+                        Debug.WriteLine($"GL error post-RenderMesh: {err}");
 
-                    Sprite.RenderShadowOutline();
-                    Sprite.RenderShadowVolume();
+                    // // Shadow volume (solid translucent), only if sun is above horizon
+                    // if (sms.ShowShadowVolume && sms.Shadow.Light.Y > 0f)
+                    // {
+                    //     sms.UpdateShadowVolumeVertices(); // refresh dynamic VBO
+                    //     if (sms.HasVolume)
+                    //     {
+                    //         SetMode(1);
+                    //         SetColor(0f, 0f, 1f, 0.4f);
+                    //         SetModelUniform(sms.Position);
+                    //         
+                    //         // Debug before draw
+                    //         err = GL.GetError();
+                    //         if (err != ErrorCode.NoError)
+                    //             Debug.WriteLine($"GL error pre-RenderShadowVolume: {err}");
+                    //
+                    //         sms.RenderShadowVolume(); // binds VAO and draws
+                    //
+                    //         err = GL.GetError();
+                    //         if (err != ErrorCode.NoError)
+                    //             Debug.WriteLine($"GL error post-RenderShadowVolume: {err}");
+                    //         
+                    //     }
+                    // }
 
-                    Sprite.PopTransform();
+                    // // Shadow outline (solid red), only if sun is above horizon
+                    // if (sms.ShowShadowOutline && sms.Shadow.Light.Y > 0f && sms.HasOutline)
+                    // {
+                    //     SetMode(1);
+                    //     SetColor(1f, 0f, 0f, 1f);
+                    //     SetModelUniform(sms.Position);
+                    //     
+                    //     // Debug before draw
+                    //     err = GL.GetError();
+                    //     if (err != ErrorCode.NoError)
+                    //         Debug.WriteLine($"GL error pre-RenderShadowOutline: {err}");
+                    //
+                    //     sms.RenderShadowOutline();
+                    //
+                    //     err = GL.GetError();
+                    //     if (err != ErrorCode.NoError)
+                    //         Debug.WriteLine($"GL error post-RenderShadowOutline: {err}");
+                    // }
                 }
 
-                // EMA FPS
-                framesRendered++;
-                int period = Math.Min(1000, framesRendered);
-                emaDelay = (DateTime.Now - start).TotalSeconds / period + emaDelay * (period - 1) / period;
-                if (framesRendered % 1000 == 0) {
-                    Debug.WriteLine($"{1.0 / Math.Max(1e-9, emaDelay):0.00} fps");
-                }
-            } catch (Exception ex) {
+                // Cleanup
+                GL.UseProgram(0);
+                GL.BindTexture(TextureTarget.Texture2D, 0);
+
+                err = GL.GetError();
+                if (err != ErrorCode.NoError)
+                    Debug.WriteLine($"[Render] GL error after draw: {err}");
+            }
+            catch (Exception ex)
+            {
                 Debug.WriteLine("ArrayModelControl render error: " + ex);
             }
         }
+
 
         private PixelSize GetFramebufferPixelSize() {
             var scale = VisualRoot?.RenderScaling ?? 1.0;
@@ -190,116 +346,293 @@ namespace SSCP.ShellPower {
 
         // ---------- Shaders / Textures ----------
         private void InitGLShaders() {
-            Debug.WriteLine("compiling shaders");
+            Debug.WriteLine("compiling shaders (core)");
+
             int shaderFrag = GL.CreateShader(ShaderType.FragmentShader);
             int shaderVert = GL.CreateShader(ShaderType.VertexShader);
 
-            // NOTE: This uses legacy built-ins (gl_*). If your platform enforces a core profile,
-            // replace these with a modern MVP + attributes pipeline and adjust Sprite accordingly.
             const string VERT_SRC = @"
+#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+
 uniform float x0, x1, z0, z1;
-uniform vec3 sunDirection;
-varying float cosRule;
-void main()
-{
-    vec4 mv = gl_ModelViewMatrix * gl_Vertex;
-    gl_Position = gl_ProjectionMatrix * mv;
-    cosRule = dot(gl_Normal, sunDirection);
-    gl_TexCoord[0] = vec4((gl_Vertex.x - x0) / (x1 - x0), (gl_Vertex.z - z0) / (z1 - z0), 0, 0);
-}";
-            const string FRAG_SRC = @"
-varying float cosRule;
-uniform sampler2D solarCells;
-void main()
-{
-    vec4 solarCell = texture2D(solarCells, gl_TexCoord[0].xy);
-    float watts = cosRule;
-    if (solarCell.x == solarCell.y && solarCell.y == solarCell.z) {
-        gl_FragData[0] = vec4(watts, watts, watts, 1.0);
-    } else {
-        gl_FragData[0] = vec4(solarCell.xyz, 1.0);
+uniform vec3  sunDirection;
+
+out vec2 vTex;
+out float vCos;
+
+void main(){
+    vec4 world = uModel * vec4(aPos,1.0);
+    gl_Position = uViewProj * world;
+
+    // Safe texture coords: guard against divide by zero
+    float dx = x1 - x0;
+    float dz = z1 - z0;
+    vTex = vec2(0.0, 0.0);
+    if (abs(dx) > 1e-6 && abs(dz) > 1e-6) {
+        vTex = vec2((aPos.x - x0) / dx,
+                    (aPos.z - z0) / dz);
     }
-}";
+
+    // simple lambert factor
+    vec3 n = normalize(aNormal);
+    vec3 l = sunDirection;
+    float lenL = length(l);
+    l = (lenL > 1e-6) ? (l / lenL) : vec3(0.0, 1.0, 0.0); // fallback up-vector
+    vCos = dot(n, l);
+}
+";
+
+            const string FRAG_SRC = @"
+#version 330 core
+in vec2  vTex;
+in float vCos;
+
+uniform sampler2D solarCells;
+uniform int  uMode;   // 0 = textured/lambert, 1 = solid color
+uniform vec4 uColor;
+
+out vec4 FragColor;
+
+void main(){
+    if (uMode == 0) {
+        vec2 tc = clamp(vTex, 0.0, 1.0);  // avoid NaN/Inf sampling
+        vec4 solarCell = texture(solarCells, tc);
+
+        float watts = max(vCos, 0.0); // clamp to avoid negative light
+
+        // if grayscale, show watts; else show cell color
+        if (abs(solarCell.r - solarCell.g) < 1e-5 &&
+            abs(solarCell.g - solarCell.b) < 1e-5)
+        {
+            FragColor = vec4(watts, watts, watts, 1.0);
+        }
+        else
+        {
+            FragColor = vec4(solarCell.rgb, 1.0);
+        }
+    } else {
+        FragColor = uColor;
+    }
+}
+"
+;
 
             GL.ShaderSource(shaderVert, VERT_SRC);
             GL.CompileShader(shaderVert);
-            Debug.WriteLine("info (vert): " + GL.GetShaderInfoLog(shaderVert));
+            var vLog = GL.GetShaderInfoLog(shaderVert);
+            if (!string.IsNullOrWhiteSpace(vLog)) Debug.WriteLine("vert log: " + vLog);
 
             GL.ShaderSource(shaderFrag, FRAG_SRC);
             GL.CompileShader(shaderFrag);
-            Debug.WriteLine("info (frag): " + GL.GetShaderInfoLog(shaderFrag));
+            var fLog = GL.GetShaderInfoLog(shaderFrag);
+            if (!string.IsNullOrWhiteSpace(fLog)) Debug.WriteLine("frag log: " + fLog);
 
             _shaderProg = GL.CreateProgram();
             GL.AttachShader(_shaderProg, shaderVert);
             GL.AttachShader(_shaderProg, shaderFrag);
             GL.LinkProgram(_shaderProg);
-            Debug.WriteLine("shader linked");
+
+            GL.GetProgram(_shaderProg, GetProgramParameterName.LinkStatus, out int linked);
+            var pLog = GL.GetProgramInfoLog(_shaderProg);
+            if (!string.IsNullOrWhiteSpace(pLog)) Debug.WriteLine("prog log: " + pLog);
+            if (linked == 0)
+                throw new InvalidOperationException("Shader link failed (core). See logs above.");
 
             GL.DeleteShader(shaderVert);
             GL.DeleteShader(shaderFrag);
 
             // uniform locations
-            _uniformX0 = GL.GetUniformLocation(_shaderProg, "x0");
-            _uniformX1 = GL.GetUniformLocation(_shaderProg, "x1");
-            _uniformZ0 = GL.GetUniformLocation(_shaderProg, "z0");
-            _uniformZ1 = GL.GetUniformLocation(_shaderProg, "z1");
-            _uniformSolarCells = GL.GetUniformLocation(_shaderProg, "solarCells");
-            _uniformSunDirection = GL.GetUniformLocation(_shaderProg, "sunDirection");
-            Debug.Assert(_uniformX0 != -1 && _uniformX1 != -1 && _uniformZ0 != -1 && _uniformZ1 != -1);
-            Debug.Assert(_uniformSolarCells != -1 && _uniformSunDirection != -1);
+            _uX0 = GL.GetUniformLocation(_shaderProg, "x0");
+            _uX1 = GL.GetUniformLocation(_shaderProg, "x1");
+            _uZ0 = GL.GetUniformLocation(_shaderProg, "z0");
+            _uZ1 = GL.GetUniformLocation(_shaderProg, "z1");
+            _uSunDir   = GL.GetUniformLocation(_shaderProg, "sunDirection");
+            _uSampler  = GL.GetUniformLocation(_shaderProg, "solarCells");
+            _uViewProj = GL.GetUniformLocation(_shaderProg, "uViewProj");
+            _uModel    = GL.GetUniformLocation(_shaderProg, "uModel");
+            _uMode     = GL.GetUniformLocation(_shaderProg, "uMode");
+            _uColor    = GL.GetUniformLocation(_shaderProg, "uColor");
+
+            Debug.Assert(_uX0!=-1 && _uX1!=-1 && _uZ0!=-1 && _uZ1!=-1);
+            Debug.Assert(_uSunDir!=-1 && _uSampler!=-1 && _uViewProj!=-1 && _uModel!=-1);
+            Debug.Assert(_uMode!=-1 && _uColor!=-1);
         }
 
         private void InitGLTextures() {
             _texArray = GL.GenTexture();
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _texArray);
-            GLUtils.FastTexSettings(_texArray); // your helper (wraps MIN/MAG/WRAP params)
-            GL.BindTexture(TextureTarget.Texture2D, 0);
+
+            // Replace FastTexSettings with:
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            // Don’t forget to allocate storage at least once:
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
         }
 
-        private void SetUniforms() {
+        private void SetUniforms()
+        {
             Debug.Assert(Array != null);
 
-            GL.Uniform1(_uniformX0, (float)Array.LayoutBounds.MinX);
-            GL.Uniform1(_uniformX1, (float)Array.LayoutBounds.MaxX);
-            GL.Uniform1(_uniformZ0, (float)Array.LayoutBounds.MinZ);
-            GL.Uniform1(_uniformZ1, (float)Array.LayoutBounds.MaxZ);
-            GL.Uniform1(_uniformSolarCells, 0); // Texture unit 0
+            if (_uX0 >= 0) { GL.Uniform1(_uX0, (float)Array.LayoutBounds.MinX); CheckGLError("uX0"); }
+            if (_uX1 >= 0) { GL.Uniform1(_uX1, (float)Array.LayoutBounds.MaxX); CheckGLError("uX1"); }
+            if (_uZ0 >= 0) { GL.Uniform1(_uZ0, (float)Array.LayoutBounds.MinZ); CheckGLError("uZ0"); }
+            if (_uZ1 >= 0) { GL.Uniform1(_uZ1, (float)Array.LayoutBounds.MaxZ); CheckGLError("uZ1"); }
 
-            var sunDir = Vector3.Zero;
-            if (Sprite is ShadowMeshSprite s && s.Shadow.Light.Length() > 0) {
-                sunDir = new Vector3(s.Shadow.Light.X, s.Shadow.Light.Y, s.Shadow.Light.Z);
-                sunDir.Normalize();
+            if (_uSampler >= 0)
+            {
+                GL.Uniform1(_uSampler, 0); // Texture unit 0
+                CheckGLError("uSampler");
             }
-            GL.Uniform3(_uniformSunDirection, sunDir);
+            else
+            {
+                Debug.WriteLine("Warning: uSampler location invalid (-1)");
+            }
+
+            var sunDir = OpenTK.Mathematics.Vector3.Zero;
+            if (Sprite is ShadowMeshSprite s && s.Shadow.Light.Length() > 0)
+            {
+                sunDir = new Vector3(s.Shadow.Light.X, s.Shadow.Light.Y, s.Shadow.Light.Z);
+            }
+            if (sunDir.LengthSquared < 1e-8f)
+                sunDir = new Vector3(0, 1, 0);  // fallback to “up”
+            
+            if (_uSunDir >= 0)
+            {
+                GL.Uniform3(_uSunDir, sunDir);
+                CheckGLError("uSunDir");
+            }
+            else
+            {
+                Debug.WriteLine("Warning: uSunDir location invalid (-1)");
+            }
         }
+        
+        [Conditional("DEBUG")]
+        private void CheckGLError(string where)
+        {
+            var err = GL.GetError();
+            if (err != ErrorCode.NoError)
+                Debug.WriteLine($"GL error at {where}: {err}");
+        }
+
+        
+        private static Matrix4 CreatePerspective(float fovDeg, float aspect, float near, float far) {
+            return Matrix4.CreatePerspectiveFieldOfView((float)(Math.PI * fovDeg / 180.0), aspect, near, far);
+        }
+
+        private void SetViewProjUniform(PixelSize px)
+        {
+            float aspect = px.Width / Math.Max(1f, (float)px.Height);
+            var proj = CreatePerspective(60f, aspect, 0.01f, 5000f);
+
+            var eye = -OpenTK.Mathematics.Vector3.UnitZ * (float)_zoom;
+            var view = Matrix4.LookAt(eye, OpenTK.Mathematics.Vector3.Zero, OpenTK.Mathematics.Vector3.UnitY) * _rotation;
+
+            var vp = proj * view;
+
+            if (_uViewProj >= 0)
+            {
+                GL.UniformMatrix4(_uViewProj, false, ref vp);
+                var err = GL.GetError();
+                if (err != ErrorCode.NoError)
+                    Debug.WriteLine($"GL error uploading uViewProj: {err}");
+            }
+            else
+            {
+                Debug.WriteLine("Warning: uViewProj location invalid (-1)");
+            }
+        }
+
+
+        private void SetModelUniform(OpenTK.Mathematics.Vector3 pos) {
+            var m = Matrix4.CreateTranslation(pos);
+            GL.UniformMatrix4(_uModel, false, ref m);
+        }
+
+        private void SetMode(int mode) => GL.Uniform1(_uMode, mode);
+        private void SetColor(float r, float g, float b, float a) => GL.Uniform4(_uColor, r, g, b, a);
 
         private void SetTexture()
         {
-            // Use ImageSharp image (fallback to default)
             var img = Array?.LayoutTexture ?? DEFAULT_TEX;
 
-            // Only (re)upload when reference changes
-            if (_lastLayoutTex != null && ReferenceEquals(img, _lastLayoutTex))
-                return;
+            // Is our GL texture alive in *this* context?
+            bool texAlive = _texArray != 0 && GL.IsTexture(_texArray);
 
-            // Ensure a texture object exists
-            if (_texArray == 0)
+            // Re-upload if the image changed OR the GL object isn't alive yet.
+            bool needUpload = !ReferenceEquals(img, _lastLayoutTex) || !texAlive;
+
+            if (!texAlive)
+            {
+                // (Re)create the texture object for this context.
                 _texArray = GL.GenTexture();
+            }
 
+            // Always bind before use
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _texArray);
 
-            // Your helper uploads the pixels to the currently-bound texture
-            GLUtils.LoadTexture(img, TextureUnit.Texture0, _texArray);
+            if (needUpload)
+            {
+                // Hardened upload: alloc first, then subimage; explicit pixel store.
+                // If you already have GLUtils.UploadImageToTexture with these protections, call that instead.
+                UploadImageToBoundTexture(img);
 
-            // (Optional) if your helper doesn’t set filtering/wrap, keep this
-            GLUtils.FastTexSettings(_texArray);
+                _lastLayoutTex = img;
+            }
 
-            _lastLayoutTex = img;
+            // Make sure the sampler points at unit 0 while the program is bound
+            GL.Uniform1(_uSampler, 0);
         }
+        
+        // Local helper that does a robust upload to the *currently bound* 2D texture.
+        private static void UploadImageToBoundTexture(Image<Rgba32> img)
+        {
+            GL.GetInteger(GetPName.MaxTextureSize, out int maxTex);
+            int w = img.Width, h = img.Height;
 
+            if (w > maxTex || h > maxTex)
+            {
+                img = img.Clone(ctx => ctx.Resize(new SixLabors.ImageSharp.Size(
+                    Math.Min(w, maxTex), Math.Min(h, maxTex))));
+                w = img.Width; h = img.Height;
+            }
 
+            // Safe pixel-store
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+#if !WINDOWS
+            GL.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
+#endif
+
+            // Allocate storage
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                w, h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+
+            // ✅ Make a single contiguous buffer of size w*h*4
+            var bytes = new byte[w * h * 4];
+            img.CopyPixelDataTo(bytes);
+
+            // Upload
+            GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, w, h,
+                PixelFormat.Rgba, PixelType.UnsignedByte, bytes);
+
+            // Params
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        }
+        
         // ---------- Screenshot for Save Render ----------
         public Bitmap GrabScreenshot()
         {
@@ -372,6 +705,13 @@ void main()
             double sensitivity = 1.0 / 300.0;
             _zoom *= Math.Exp(-e.Delta.Y * 120.0 * sensitivity); // approximate WinForms wheel step (120)
             _zoom = Math.Clamp(_zoom, 0.01, 1e6);
+        }
+
+        private OpenTK.Graphics.OpenGL.DebugProc? _debugProc;
+        private void DebugCallback(DebugSource source, DebugType type, int id, DebugSeverity severity, int length, IntPtr message, IntPtr userParam)
+        {
+            var msg = Marshal.PtrToStringAnsi(message, length);
+            Debug.WriteLine($"[GL DEBUG] {severity} {type} {id}: {msg}");
         }
 
         private void OnKeyDown(object? sender, KeyEventArgs e) {

@@ -6,13 +6,8 @@ using Avalonia.Media;
 using System.Numerics;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Formats;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Bmp;
-using SixLabors.ImageSharp.Formats.Gif;
-using Image = Avalonia.Controls.Image;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace SSCP.ShellPower {
     public partial class MainWindow : Window {
@@ -37,7 +32,7 @@ namespace SSCP.ShellPower {
             InitTimeAndPlace();
             InitializeArraySpec();
             InitializeConditions();
-            CalculateSimStepGui();
+            // CalculateSimStepGui();
 
             // init subviews
             InitInputView();
@@ -132,7 +127,7 @@ namespace SSCP.ShellPower {
             if (size.Length() > 1000) {
                 mesh = MeshUtils.Scale(mesh, 0.001f);
             }
-            StatusText.Text = $"Loaded model {Path.GetFileName(filename)}, {mesh.triangles.Length} triangles, {size.X:0.00}x{size.Y:0.00}x{size.Z:0.00}m";
+            // StatusText.Text = $"Loaded model {Path.GetFileName(filename)}, {mesh.triangles.Length} triangles, {size.X:0.00}x{size.Y:0.00}x{size.Z:0.00}m";
             return mesh;
         }
 
@@ -157,7 +152,8 @@ namespace SSCP.ShellPower {
             GLView.Sprite = shadowSprite;
 
             simInput.Array.Mesh = mesh;
-            CalculateSimStepGui();
+            Debug.WriteLine($"[SetModel] Sprite set. tris={mesh.triangles.Length}, bounds={mesh.BoundingBox.Min}..{mesh.BoundingBox.Max}");
+            // CalculateSimStepGui();
         }
 
         /// <summary>
@@ -186,25 +182,51 @@ namespace SSCP.ShellPower {
             if (shadow == null) return;
             shadow.Light = new Vector4(lightDir, 0);
             shadow.ComputeShadows();
-            GLView.InvalidateVisual();
+            GLView.RequestNextFrameRendering();
         }
 
         // -------------------- UI Event Handlers --------------------
-        private async void OpenModel_Click(object? sender, RoutedEventArgs e) {
-            var dlg = new OpenFileDialog { AllowMultiple = false, Filters = {
-                new FileDialogFilter { Name = "3DXML files", Extensions = { "3dxml" } },
-                new FileDialogFilter { Name = "STL Files (ascii)", Extensions = { "stl" } },
-                new FileDialogFilter { Name = "All files", Extensions = { "*" } }
-            }};
-            var result = await dlg.ShowAsync(this);
-            if (result == null || result.Length == 0) return;
-            try {
-                await LoadModel(result[0]);
-                meshFilename = result[0];
-            } catch (Exception ex) {
-                await ShowErrorAsync("Error loading model", ex.Message);
+
+        private async void OpenModel_Click(object? sender, RoutedEventArgs e)
+        {
+            var files = await this.StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    AllowMultiple = false,
+                    Title = "Open 3D Model",
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("3D Models")
+                        {
+                            Patterns = new[] { "*.stl", "*.3dxml" }
+                        },
+                        FilePickerFileTypes.All
+                    }
+                });
+
+            if (files is null || files.Count == 0) 
+                return;
+
+            var path = files[0].TryGetLocalPath();
+            if (path is null)
+            {
+                await ShowErrorAsync("Unsupported file source", 
+                    "This file cannot be accessed via a local path. " +
+                    "Please copy it to a local drive first.");
+                return;
             }
-            CalculateSimStepGui();
+
+            try
+            {
+                await LoadModel(path);
+                meshFilename = path;
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorAsync("Error loading model", $"{ex.Message}\n\n{ex.StackTrace}");
+            }
+
+            // CalculateSimStepGui();
         }
 
         private async void OpenLayoutTexture_Click(object? sender, RoutedEventArgs e) {
@@ -223,7 +245,8 @@ namespace SSCP.ShellPower {
                 await ShowErrorAsync("Error loading layout texture", ex.Message);
                 array.LayoutTexture = origTexture;
             }
-            CalculateSimStepGui();
+            
+            // CalculateSimStepGui();
         }
 
         private async void SaveLayoutTexture_Click(object? sender, RoutedEventArgs e) {
@@ -271,7 +294,7 @@ namespace SSCP.ShellPower {
             } catch (Exception ex) {
                 await ShowErrorAsync("Error loading model", ex.Message);
             }
-            CalculateSimStepGui();
+            // CalculateSimStepGui();
         }
 
         private async void SaveParameters_Click(object? sender, RoutedEventArgs e) {
@@ -318,7 +341,7 @@ namespace SSCP.ShellPower {
         }
 
         private void SimInputs_Change(object? sender, EventArgs e) {
-            CalculateSimStepGui();
+            // CalculateSimStepGui();
         }
 
         private async void Simulate_Click(object? sender, RoutedEventArgs e) {
@@ -438,21 +461,44 @@ namespace SSCP.ShellPower {
         }
 
         // -------------------- Minimal modal helpers (no extra deps) --------------------
-        private async Task ShowErrorAsync(string title, string message) {
-            var dlg = new Window {
-                Title = title,
-                Width = 420,
-                Height = 180,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Content = new StackPanel { Margin = new Thickness(12), Children = {
-                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) },
-                    new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Width = 80, IsDefault = true, [!Button.CommandProperty] = null }
-                }}
-            };
-            var ok = ((StackPanel)dlg.Content!).Children.OfType<Button>().First();
-            ok.Click += (_, __) => dlg.Close();
-            await dlg.ShowDialog(this);
-        }
+        private async Task ShowErrorAsync(string title, string message)
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var dlg = new Window
+                {
+                    Title = title,
+                    Width = 420,
+                    Height = 180,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Content = new StackPanel
+                    {
+                        Margin = new Thickness(12),
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = message,
+                                TextWrapping = TextWrapping.Wrap,
+                                Margin = new Thickness(0,0,0,12)
+                            },
+                            new Button
+                            {
+                                Content = "OK",
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                                Width = 80,
+                                IsDefault = true
+                            }
+                        }
+                    }
+                };
+
+                var ok = ((StackPanel)dlg.Content!).Children.OfType<Button>().First();
+                ok.Click += (_, __) => dlg.Close();
+
+                await dlg.ShowDialog(this);
+            });
+        }        
         private Task ShowInfoAsync(string message) => ShowErrorAsync("Info", message);
     }
 }

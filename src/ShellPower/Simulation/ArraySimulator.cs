@@ -127,48 +127,93 @@ void main(){
         {
             _w = _h = COMPUTE_TEX_SIZE;
 
+            // --- Cells texture (RGBA8) ---
             _texCells = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texCells);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                          _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             SetTexParams(_texCells);
 
+            // --- Watts texture (RGBA16F: more precision for encoded floats) ---
             _texWatts = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texWatts);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f,
+                          _w, _h, 0, PixelFormat.Rgba, PixelType.HalfFloat, IntPtr.Zero);
             SetTexParams(_texWatts);
 
+            // --- Area texture (RGBA16F) ---
             _texArea = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texArea);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f,
+                          _w, _h, 0, PixelFormat.Rgba, PixelType.HalfFloat, IntPtr.Zero);
             SetTexParams(_texArea);
 
+            // --- Depth texture (DEPTH24) ---
             _texDepth = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texDepth);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent24, _w, _h, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
-            GL.TextureParameter(_texCells, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-            GL.TextureParameter(_texCells, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent24,
+                          _w, _h, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
+            // --- Framebuffer setup ---
             _fbo = GL.GenFramebuffer();
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _texCells, 0);
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _texWatts, 0);
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment2, TextureTarget.Texture2D, _texArea, 0);
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _texDepth, 0);
 
+            // Specify we will draw to all three color attachments
+            DrawBuffersEnum[] bufs = {
+                DrawBuffersEnum.ColorAttachment0,
+                DrawBuffersEnum.ColorAttachment1,
+                DrawBuffersEnum.ColorAttachment2
+            };
+            GL.DrawBuffers(bufs.Length, bufs);
+
+            // Check status
             var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
             if (status != FramebufferErrorCode.FramebufferComplete)
                 throw new InvalidOperationException($"FBO incomplete: {status}");
 
+            // Unbind to avoid accidental rendering
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         }
 
-        private static void SetTexParams(int tex)
+        // Call this ONLY when the texture is already bound to `target`
+        private static void SetTexParamsBound(TextureTarget target = TextureTarget.Texture2D)
         {
-            GL.TextureParameter(tex, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-            GL.TextureParameter(tex, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
-            GL.TextureParameter(tex, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-            GL.TextureParameter(tex, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureWrapS,     (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureWrapT,     (int)TextureWrapMode.ClampToEdge);
         }
+
+        // Backward-compatible shim: bind -> set -> restore previous binding
+        private static void SetTexParams(int tex, TextureTarget target = TextureTarget.Texture2D)
+        {
+            // Save current binding for this target
+            int prev = 0;
+            switch (target)
+            {
+                case TextureTarget.Texture2D:
+                    GL.GetInteger(GetPName.TextureBinding2D, out prev);
+                    break;
+                // add other targets here if you use them
+                default:
+                    GL.GetInteger(GetPName.TextureBinding2D, out prev);
+                    break;
+            }
+
+            GL.BindTexture(target, tex);
+            SetTexParamsBound(target);
+            GL.BindTexture(target, prev);
+        }
+
 
         private void InitInputArrayTexture()
         {
@@ -192,7 +237,9 @@ void main(){
             if (array.LayoutTexture is null) throw new ArgumentException("No array layout (texture) loaded.");
             if (wPerM2Insolation < 0) throw new ArgumentException("Invalid insolation.");
             if (Math.Abs(sunDir.Length() - 1.0f) > 1e-3) throw new ArgumentException("Sun dir must be unit length.");
-
+            
+            
+            
             EnsureGlResources();
 
             var t1 = DateTime.Now;

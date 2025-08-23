@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Diagnostics;
 using OpenTK.Graphics.OpenGL;          // GL (core bindings)
 using OpenTK.Mathematics;              // Matrix4
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced; // Image<TPixel>
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing; // <= add this
 
 namespace SSCP.ShellPower
 {
@@ -48,17 +50,23 @@ namespace SSCP.ShellPower
             GL.Uniform4(baseLocation + 3, m.M14, m.M24, m.M34, m.M44);
         }
 
-        // --- TEXTURE HELPERS (ImageSharp → GL) ---
-
-        /// <summary>
-        /// Set common sampling/wrap params (DSA; no bind required).
-        /// </summary>
-        public static void FastTexSettings(int textureId)
+        // Safe everywhere: assumes the texture is already bound to 'target'
+        public static void FastTexSettingsBound(TextureTarget target = TextureTarget.Texture2D)
         {
-            GL.TextureParameter(textureId, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-            GL.TextureParameter(textureId, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
-            GL.TextureParameter(textureId, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-            GL.TextureParameter(textureId, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureWrapS,     (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureWrapT,     (int)TextureWrapMode.ClampToEdge);
+        }
+
+        // Backward-compatible shim: bind the texture, set params, restore previous binding.
+        // You can replace old callsites that pass an ID with this method and it will still work on macOS.
+        public static void FastTexSettings(int textureId, TextureTarget target = TextureTarget.Texture2D)
+        {
+            GL.GetInteger(GetPName.TextureBinding2D, out int prev); // assumes Texture2D; adjust if you use other targets
+            GL.BindTexture(target, textureId);
+            FastTexSettingsBound(target);
+            GL.BindTexture(target, prev);
         }
         
         private static Image<Rgba32> LoadTexture(string filename)
@@ -75,11 +83,14 @@ namespace SSCP.ShellPower
         {
             if (img is null) throw new ArgumentNullException(nameof(img));
 
-            // Flatten pixels to Rgba32[] (one contiguous memory group)
+            // Flatten pixel buffer
             var pixels = img.GetPixelMemoryGroup()[0].ToArray();
 
             GL.ActiveTexture(slot);
             GL.BindTexture(TextureTarget.Texture2D, textureId);
+
+            // Important on macOS: no row padding assumptions
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
 
             GL.TexImage2D(
                 TextureTarget.Texture2D,
@@ -92,8 +103,65 @@ namespace SSCP.ShellPower
                 type: PixelType.UnsignedByte,
                 pixels: pixels);
 
-            FastTexSettings(textureId);
+            // Set filtering/wrap once while bound
+            FastTexSettingsBound(TextureTarget.Texture2D);
         }
+        
+        // Hardened upload: handles large images, row alignment, and "first texture" on macOS.
+        public static void UploadImageToTexture(Image<Rgba32> img, int textureId, TextureTarget target = TextureTarget.Texture2D)
+        {
+            if (img is null) throw new ArgumentNullException(nameof(img));
+            if (textureId == 0) throw new InvalidOperationException("Texture not created/bound.");
+
+            // 1) Query max texture size and downscale if needed
+            GL.GetInteger(GetPName.MaxTextureSize, out int maxTexSize);
+            int srcW = img.Width, srcH = img.Height;
+            if (srcW > maxTexSize || srcH > maxTexSize)
+            {
+                double scale = Math.Min((double)maxTexSize / srcW, (double)maxTexSize / srcH);
+                int dstW = Math.Max(1, (int)Math.Floor(srcW * scale));
+                int dstH = Math.Max(1, (int)Math.Floor(srcH * scale));
+                img = img.Clone(ctx => ctx.Resize(dstW, dstH));
+                srcW = img.Width; srcH = img.Height;
+                Debug.WriteLine($"[GLUpload] Resized to {srcW}x{srcH} (max {maxTexSize}).");
+            }
+
+            // 2) Bind + set safe pixel store
+            GL.BindTexture(target, textureId);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        #if !WINDOWS
+            // be explicit on non-Windows; 0 = tightly packed
+            GL.PixelStore((PixelStoreParameter)0x0CF2 /*GL_UNPACK_ROW_LENGTH*/, 0);
+        #endif
+
+            // 3) Allocate storage first with NULL (some mac drivers prefer this)
+            GL.TexImage2D(target, level: 0,
+                internalformat: PixelInternalFormat.Rgba8, // 8-bit RGBA
+                width: srcW, height: srcH, border: 0,
+                format: PixelFormat.Rgba, type: PixelType.UnsignedByte,
+                pixels: IntPtr.Zero);
+
+            // 4) Upload real pixels via SubImage
+            var pixels = img.GetPixelMemoryGroup()[0].ToArray();
+            GL.TexSubImage2D(target, level: 0, xoffset: 0, yoffset: 0, width: srcW, height: srcH,
+                format: PixelFormat.Rgba, type: PixelType.UnsignedByte, pixels: pixels);
+
+            // 5) Set parameters while bound (no DSA)
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            GL.TexParameter(target, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            // 6) Validate + log
+            var err = GL.GetError();
+            if (err != ErrorCode.NoError)
+                Debug.WriteLine($"[GLUpload] GL error after upload: {err}");
+
+            GL.GetTexLevelParameter(target, 0, GetTextureParameter.TextureWidth, out int wid);
+            GL.GetTexLevelParameter(target, 0, GetTextureParameter.TextureHeight, out int hei);
+            Debug.WriteLine($"[GLUpload] Uploaded {wid}x{hei} into tex {textureId}");
+        }
+
         
         public static void SetCameraProjectionPerspective(int width, int height,
             float fovDeg = 60f,
