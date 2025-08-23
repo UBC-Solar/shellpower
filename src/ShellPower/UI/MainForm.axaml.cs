@@ -150,7 +150,6 @@ namespace SSCP.ShellPower {
             var center = (mesh.BoundingBox.Max + mesh.BoundingBox.Min) / 2;
             shadowSprite.Position = new OpenTK.Mathematics.Vector3(-center.X, -center.Y, -center.Z);
             GLView.Sprite = shadowSprite;
-
             simInput.Array.Mesh = mesh;
             Debug.WriteLine($"[SetModel] Sprite set. tris={mesh.triangles.Length}, bounds={mesh.BoundingBox.Min}..{mesh.BoundingBox.Max}");
             // CalculateSimStepGui();

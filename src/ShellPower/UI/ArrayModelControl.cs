@@ -97,6 +97,16 @@ namespace SSCP.ShellPower {
             public OpenTKBindingsContext(GlInterface gl) => _gl = gl;
             public IntPtr GetProcAddress(string procName) => _gl.GetProcAddress(procName);
         }
+        
+        private static float ComputeFitZoom(ShadowMeshSprite sms, float fovDeg, float aspect)
+        {
+            var size = sms.BoundingBox.Max - sms.BoundingBox.Min;
+            float maxXZ = MathF.Max(size.X, size.Z);       // fit width/depth
+            float fovRad = MathF.PI * fovDeg / 180f;
+            // distance so max dimension fits in view, with margin
+            return (maxXZ * 0.5f) / MathF.Tan(fovRad * 0.5f) * 1.3f;
+        }
+
 
         // ---------- GL lifecycle ----------
         protected override void OnOpenGlInit(GlInterface gl) {
@@ -153,6 +163,44 @@ namespace SSCP.ShellPower {
             _glReady = false;
         }
 
+        private float _currentRotation = 90;
+        
+        private static Matrix4 BuildClipFitModel(ShadowMeshSprite sms, float margin = 0.1f)
+        {
+            var min = sms.BoundingBox.Min;
+            var max = sms.BoundingBox.Max;
+            var center = (min + max) * 0.5f;
+            var size   = (max - min);
+            float maxDim = Math.Max(size.X, Math.Max(size.Y, size.Z));
+            float s = (maxDim > 0) ? (2f * (1f - margin) / maxDim) : 1f;
+
+            var S = Matrix4.CreateScale(s);
+            var T = Matrix4.CreateTranslation(-new Vector3(center.X, center.Y, center.Z));
+            return S * T;  // scale then translate to center at origin
+        }
+        
+        private static Vector3 SunDirFromAzAlt(float azDeg, float altDeg)
+        {
+            float az  = MathF.PI * azDeg  / 180f;
+            float alt = MathF.PI * altDeg / 180f;
+
+            float y = MathF.Sin(alt);            // up
+            float r = MathF.Cos(alt);
+            float x = r * MathF.Sin(az);         // right
+            float z = r * MathF.Cos(az);         // forward (+Z)
+
+            return new Vector3(x, y, z);
+        }
+        
+        private static Matrix4 BuildClipFitModelWithSpin(ShadowMeshSprite sms, float yawDeg)
+        {
+            var M = BuildClipFitModel(sms);
+            var R = Matrix4.CreateFromQuaternion(
+                OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY, MathF.PI * yawDeg / 180f));
+            return R * M; // rotate, then fit
+        }
+
+
         protected override void OnOpenGlRender(GlInterface gl, int framebuffer)
         {
             if (!_glReady) return;
@@ -163,7 +211,7 @@ namespace SSCP.ShellPower {
             GL.Disable(EnableCap.DepthTest);
             GL.UseProgram(_shaderProg);
 
-// Upload an identity uViewProj / uModel so clip-space positions work directly
+            // Upload an identity uViewProj / uModel so clip-space positions work directly
             var ident = OpenTK.Mathematics.Matrix4.Identity;
             GL.UniformMatrix4(_uViewProj, false, ref ident);
             GL.UniformMatrix4(_uModel, false, ref ident);
@@ -189,8 +237,7 @@ namespace SSCP.ShellPower {
                 // viewport/proj
                 var px = GetFramebufferPixelSize();
                 GL.Viewport(0, 0, px.Width, px.Height);
-                SetViewProjUniform(px);
-
+                
                 // uniforms (bounds + sun direction)
                 SetUniforms();
 
@@ -212,130 +259,66 @@ namespace SSCP.ShellPower {
                 // --- END DEBUG ---
                 
                 // Render
-if (Sprite is ShadowMeshSprite sms)
-{
-sms.EnsureGlResourcesCreated();
+                if (Sprite is ShadowMeshSprite sms)
+                {
+                    sms.EnsureGlResourcesCreated();
+                    
+                    double yawRad = _currentRotation * (Math.PI / 180); // 45°
+                    _currentRotation += 0.5f;
+                    double pitchRad = -30f * (Math.PI / 180); // 30°
+                    
+                    var R = Matrix4.CreateFromQuaternion( OTQ.Quaternion.Normalize( OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, (float)pitchRad) * OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY, (float)yawRad)));
+                    ident = R * OpenTK.Mathematics.Matrix4.Identity;
+                    GL.UniformMatrix4(_uViewProj, false, ref ident);
+                    SetModelUniform(sms.Position); // centers mesh at origin
+                    
+                    Vector3 sun = SunDirFromAzAlt(azDeg: 315f, altDeg: 30f);
+                    sms.Shadow.Light = new System.Numerics.Vector4(sun.X, sun.Y, sun.Z, 0f);
+                    sms.Shadow.ComputeShadows();
+                    sms.RebuildOutlineBuffer();       // outline uses silhouette edges
+                    sms.UpdateShadowVolumeVertices(); // volume uses same
+                    
+                    // ---- lambert state (no hiding) ----
+                    SetMode(0);
+                    GL.Uniform3(_uSunDir, sun);       // after any SetUniforms()
+                    SetModelUniform(sms.Position);    // translation only
+                    GL.Enable(EnableCap.DepthTest);
+                    GL.Enable(EnableCap.CullFace);
+                    GL.FrontFace(FrontFaceDirection.Cw);
+                    sms.RenderMesh();
+                    
+                    if (sms.ShowShadowVolume && sms.Shadow.Light.Y > 0f && sms.HasVolume)
+                    {
+                        SetMode(1);
+                        SetColor(0f, 0f, 1f, 0.35f);
+                        SetModelUniform(sms.Position);
 
-// --- program bound already ---
-int current; GL.GetInteger(GetPName.CurrentProgram, out current);
-Debug.WriteLine($"[State] program={current} expect={_shaderProg}");
+                        GL.Enable(EnableCap.Blend);
+                        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
-// uViewProj = I
-var I = OpenTK.Mathematics.Matrix4.Identity;
-GL.UniformMatrix4(_uViewProj, false, ref I);
+                        GL.Enable(EnableCap.DepthTest);
+                        GL.DepthMask(false);            // don’t write depth so it layers nicely
+                        GL.Disable(EnableCap.CullFace); // volumes often need both sides
 
-// Model = Scale * Translate(-center)  --> fit into [-1,1]
-var bbMin = sms.BoundingBox.Min;
-var bbMax = sms.BoundingBox.Max;
-var center = (bbMin + bbMax) * 0.5f;
-var size   = (bbMax - bbMin);
-float maxDim = Math.Max(size.X, Math.Max(size.Y, size.Z));
-float s = (maxDim > 0) ? (1.6f / maxDim) : 1f;
-var M = Matrix4.CreateScale(s) * Matrix4.CreateTranslation(-new Vector3(center.X, center.Y, center.Z));
-GL.UniformMatrix4(_uModel, false, ref M);
+                        sms.RenderShadowVolume();
 
-// Solid color; no lighting/texture
-SetMode(1); SetColor(0,1,0,1);
-GL.Disable(EnableCap.CullFace);
-GL.Disable(EnableCap.DepthTest);
+                        GL.DepthMask(true);
+                        GL.Enable(EnableCap.CullFace);
+                    }
+                    
+                    if (sms.ShowShadowOutline && sms.Shadow.Light.Y > 0f && sms.HasOutline)
+                    {
+                        SetMode(1);
+                        SetColor(1f, 0f, 0f, 1f);
+                        SetModelUniform(sms.Position);
 
-// Scratch VAO (core profile requires a VAO != 0)
-int vaoScratch = GL.GenVertexArray();
-GL.BindVertexArray(vaoScratch);
+                        GL.Disable(EnableCap.DepthTest); // draw on top
+                        sms.RenderShadowOutline();
+                        GL.Enable(EnableCap.DepthTest);
+                    }
 
-// Bind interleaved VBO as positions @ location 0 (use IntPtr offsets!)
-GL.BindBuffer(BufferTarget.ArrayBuffer, sms.VboInterleaved);
-GL.EnableVertexAttribArray(0);
-GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false,
-                       6 * sizeof(float), (IntPtr)0);
-
-// Bind EBO & draw TRIANGLES
-GL.BindBuffer(BufferTarget.ElementArrayBuffer, sms.Ebo);
-GL.DrawElements(PrimitiveType.Triangles, sms.IndexCount, sms.IndexType, IntPtr.Zero);
-
-// dump state
-int boundVAO, boundVBO, boundEBO;
-GL.GetInteger(GetPName.VertexArrayBinding, out boundVAO);
-GL.GetInteger(GetPName.ArrayBufferBinding, out boundVBO);
-GL.GetInteger(GetPName.ElementArrayBufferBinding, out boundEBO);
-Debug.WriteLine($"[State] vao={boundVAO} vbo={boundVBO} ebo={boundEBO}");
-Debug.WriteLine($"[Mesh] idx={sms.IndexCount} type={sms.IndexType} verts={sms.VertexCount}");
-
-err = GL.GetError();
-Debug.WriteLine($"[ClipEBO] err={err}");
-
-// cleanup
-GL.BindVertexArray(0);
-GL.DeleteVertexArray(vaoScratch);
-GL.Enable(EnableCap.DepthTest);
-GL.Enable(EnableCap.CullFace);
-}
-
-
-                // Render
-                // if (Sprite is ShadowMeshSprite sms)
-                // {
-                //     sms.EnsureGlResourcesCreated();   // ensure VAOs/VBOs only when context is current
-                //
-                //     // Mesh (textured/lambert)
-                //     SetMode(0);
-                //     SetModelUniform(sms.Position);
-                //     
-                //     // Debug before draw
-                //     err = GL.GetError();
-                //     if (err != ErrorCode.NoError)
-                //         Debug.WriteLine($"GL error pre-RenderMesh: {err}");
-                //
-                //     sms.RenderMesh();
-                //
-                //     err = GL.GetError();
-                //     if (err != ErrorCode.NoError)
-                //         Debug.WriteLine($"GL error post-RenderMesh: {err}");
-
-                    // // Shadow volume (solid translucent), only if sun is above horizon
-                    // if (sms.ShowShadowVolume && sms.Shadow.Light.Y > 0f)
-                    // {
-                    //     sms.UpdateShadowVolumeVertices(); // refresh dynamic VBO
-                    //     if (sms.HasVolume)
-                    //     {
-                    //         SetMode(1);
-                    //         SetColor(0f, 0f, 1f, 0.4f);
-                    //         SetModelUniform(sms.Position);
-                    //         
-                    //         // Debug before draw
-                    //         err = GL.GetError();
-                    //         if (err != ErrorCode.NoError)
-                    //             Debug.WriteLine($"GL error pre-RenderShadowVolume: {err}");
-                    //
-                    //         sms.RenderShadowVolume(); // binds VAO and draws
-                    //
-                    //         err = GL.GetError();
-                    //         if (err != ErrorCode.NoError)
-                    //             Debug.WriteLine($"GL error post-RenderShadowVolume: {err}");
-                    //         
-                    //     }
-                    // }
-
-                    // // Shadow outline (solid red), only if sun is above horizon
-                    // if (sms.ShowShadowOutline && sms.Shadow.Light.Y > 0f && sms.HasOutline)
-                    // {
-                    //     SetMode(1);
-                    //     SetColor(1f, 0f, 0f, 1f);
-                    //     SetModelUniform(sms.Position);
-                    //     
-                    //     // Debug before draw
-                    //     err = GL.GetError();
-                    //     if (err != ErrorCode.NoError)
-                    //         Debug.WriteLine($"GL error pre-RenderShadowOutline: {err}");
-                    //
-                    //     sms.RenderShadowOutline();
-                    //
-                    //     err = GL.GetError();
-                    //     if (err != ErrorCode.NoError)
-                    //         Debug.WriteLine($"GL error post-RenderShadowOutline: {err}");
-                    // }
-                // }
-
+                }
+                
                 // Cleanup
                 GL.UseProgram(0);
                 GL.BindTexture(TextureTarget.Texture2D, 0);
@@ -349,27 +332,13 @@ GL.Enable(EnableCap.CullFace);
                 Debug.WriteLine("ArrayModelControl render error: " + ex);
             }
         }
-
-
+        
         private PixelSize GetFramebufferPixelSize() {
             var scale = VisualRoot?.RenderScaling ?? 1.0;
             int w = Math.Max(1, (int)Math.Round(Bounds.Width * scale));
             int h = Math.Max(1, (int)Math.Round(Bounds.Height * scale));
             return new PixelSize(w, h);
         }
-
-        // ---------- Camera ----------
-        private void SetViewport() {
-            var px = GetFramebufferPixelSize();
-            GL.Viewport(0, 0, px.Width, px.Height);
-        }
-
-        // private void SetModelViewCamera() {
-        //     var position = -Vector3.UnitZ * (float)_zoom;
-        //     var modelview = Matrix4.LookAt(position, Vector3.Zero, Vector3.UnitY) * _rotation;
-        //     GL.MatrixMode(MatrixMode.Modelview);
-        //     GL.LoadMatrix(ref modelview);
-        // }
 
         // ---------- Shaders / Textures ----------
         private void InitGLShaders() {
@@ -523,24 +492,6 @@ void main(){
             else
             {
                 Debug.WriteLine("Warning: uSampler location invalid (-1)");
-            }
-
-            var sunDir = OpenTK.Mathematics.Vector3.Zero;
-            if (Sprite is ShadowMeshSprite s && s.Shadow.Light.Length() > 0)
-            {
-                sunDir = new Vector3(s.Shadow.Light.X, s.Shadow.Light.Y, s.Shadow.Light.Z);
-            }
-            if (sunDir.LengthSquared < 1e-8f)
-                sunDir = new Vector3(0, 1, 0);  // fallback to “up”
-            
-            if (_uSunDir >= 0)
-            {
-                GL.Uniform3(_uSunDir, sunDir);
-                CheckGLError("uSunDir");
-            }
-            else
-            {
-                Debug.WriteLine("Warning: uSunDir location invalid (-1)");
             }
         }
         
