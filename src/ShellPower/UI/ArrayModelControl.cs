@@ -14,6 +14,7 @@ using Avalonia.Rendering;
 using SixLabors.ImageSharp.Advanced;
 using Point = Avalonia.Point;
 using SixLabors.ImageSharp.Processing; // <= add this
+using OTQ = OpenTK.Mathematics; // (optional alias)
 
 namespace SSCP.ShellPower {
     public class ArrayModelControl : OpenGlControlBase {
@@ -31,7 +32,7 @@ namespace SSCP.ShellPower {
         /* view state */
         private const double INITIAL_ZOOM = 20;
         private double _zoom = INITIAL_ZOOM;                  // meters away from the model
-        private Matrix4 _rotation = Matrix4.CreateRotationX(-PI / 2f); // top-down
+        // private Matrix4 _rotation = Matrix4.CreateRotationX(-PI / 2f); // top-down
 
         /* GL state */
         private bool _glReady = false;
@@ -115,7 +116,6 @@ namespace SSCP.ShellPower {
                 }
             }
             catch { /* ignore if unsupported */ }
-
             
             Debug.WriteLine($"GL Version: {GL.GetString(StringName.Version)}");
             Debug.WriteLine($"GLSL Version: {GL.GetString(StringName.ShadingLanguageVersion)}");
@@ -131,8 +131,13 @@ namespace SSCP.ShellPower {
 
             InitGLShaders();
             InitGLTextures();
+            
+            _scratchVao = GL.GenVertexArray();
+            
             _glReady = true;
         }
+        
+        private int _scratchVao;
 
         protected override void OnOpenGlDeinit(GlInterface gl) {
             try {
@@ -165,30 +170,8 @@ namespace SSCP.ShellPower {
             GL.Uniform1(_uMode, 1);
             GL.Uniform4(_uColor, 0.2f, 0.8f, 0.4f, 1f);
 
-// Quick-and-dirty immediate buffer (one frame) just to see something
-            int vao = GL.GenVertexArray();
-            int vbo = GL.GenBuffer();
-            GL.BindVertexArray(vao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
-            float[] verts = {
-                -0.5f, -0.5f, 0f,
-                0.5f, -0.5f, 0f,
-                0.0f,  0.5f, 0f
-            };
-            GL.BufferData(BufferTarget.ArrayBuffer, verts.Length * sizeof(float), verts, BufferUsageHint.StreamDraw);
-            GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-            GL.DisableVertexAttribArray(0);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
-            GL.BindVertexArray(0);
-            GL.DeleteBuffer(vbo);
-            GL.DeleteVertexArray(vao);
-
             GL.Enable(EnableCap.DepthTest);
-
-            var start = DateTime.Now;
-
+            
             try
             {
                 // Bind shader program
@@ -197,22 +180,6 @@ namespace SSCP.ShellPower {
                 // --- 🔎 DEBUG BLOCK GOES HERE ---
                 int currentProgram;
                 GL.GetInteger(GetPName.CurrentProgram, out currentProgram);
-                // Debug.WriteLine($"Current program={currentProgram}, expected={_shaderProg}");
-
-                // if (_uViewProj >= 0)
-                //     Debug.WriteLine($"uViewProj loc={_uViewProj}");
-                // else
-                //     Debug.WriteLine("Warning: uViewProj invalid");
-
-                // if (_uModel >= 0)
-                //     Debug.WriteLine($"uModel loc={_uModel}");
-                // else
-                //     Debug.WriteLine("Warning: uModel invalid");
-                //
-                // if (_uSampler >= 0)
-                //     Debug.WriteLine($"uSampler loc={_uSampler}");
-                // else
-                //     Debug.WriteLine("Warning: uSampler invalid");
 
                 var errCheck = GL.GetError();
                 if (errCheck != ErrorCode.NoError)
@@ -238,32 +205,92 @@ namespace SSCP.ShellPower {
 
                 int boundTex;
                 GL.GetInteger(GetPName.TextureBinding2D, out boundTex);
-                // Debug.WriteLine($"[Render] texId={_texArray}, boundTex={boundTex}");
 
                 var err = GL.GetError();
                 if (err != ErrorCode.NoError)
                     Debug.WriteLine($"[Render] GL error before draw: {err}");
                 // --- END DEBUG ---
+                
+                // Render
+if (Sprite is ShadowMeshSprite sms)
+{
+sms.EnsureGlResourcesCreated();
+
+// --- program bound already ---
+int current; GL.GetInteger(GetPName.CurrentProgram, out current);
+Debug.WriteLine($"[State] program={current} expect={_shaderProg}");
+
+// uViewProj = I
+var I = OpenTK.Mathematics.Matrix4.Identity;
+GL.UniformMatrix4(_uViewProj, false, ref I);
+
+// Model = Scale * Translate(-center)  --> fit into [-1,1]
+var bbMin = sms.BoundingBox.Min;
+var bbMax = sms.BoundingBox.Max;
+var center = (bbMin + bbMax) * 0.5f;
+var size   = (bbMax - bbMin);
+float maxDim = Math.Max(size.X, Math.Max(size.Y, size.Z));
+float s = (maxDim > 0) ? (1.6f / maxDim) : 1f;
+var M = Matrix4.CreateScale(s) * Matrix4.CreateTranslation(-new Vector3(center.X, center.Y, center.Z));
+GL.UniformMatrix4(_uModel, false, ref M);
+
+// Solid color; no lighting/texture
+SetMode(1); SetColor(0,1,0,1);
+GL.Disable(EnableCap.CullFace);
+GL.Disable(EnableCap.DepthTest);
+
+// Scratch VAO (core profile requires a VAO != 0)
+int vaoScratch = GL.GenVertexArray();
+GL.BindVertexArray(vaoScratch);
+
+// Bind interleaved VBO as positions @ location 0 (use IntPtr offsets!)
+GL.BindBuffer(BufferTarget.ArrayBuffer, sms.VboInterleaved);
+GL.EnableVertexAttribArray(0);
+GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false,
+                       6 * sizeof(float), (IntPtr)0);
+
+// Bind EBO & draw TRIANGLES
+GL.BindBuffer(BufferTarget.ElementArrayBuffer, sms.Ebo);
+GL.DrawElements(PrimitiveType.Triangles, sms.IndexCount, sms.IndexType, IntPtr.Zero);
+
+// dump state
+int boundVAO, boundVBO, boundEBO;
+GL.GetInteger(GetPName.VertexArrayBinding, out boundVAO);
+GL.GetInteger(GetPName.ArrayBufferBinding, out boundVBO);
+GL.GetInteger(GetPName.ElementArrayBufferBinding, out boundEBO);
+Debug.WriteLine($"[State] vao={boundVAO} vbo={boundVBO} ebo={boundEBO}");
+Debug.WriteLine($"[Mesh] idx={sms.IndexCount} type={sms.IndexType} verts={sms.VertexCount}");
+
+err = GL.GetError();
+Debug.WriteLine($"[ClipEBO] err={err}");
+
+// cleanup
+GL.BindVertexArray(0);
+GL.DeleteVertexArray(vaoScratch);
+GL.Enable(EnableCap.DepthTest);
+GL.Enable(EnableCap.CullFace);
+}
+
 
                 // Render
-                if (Sprite is ShadowMeshSprite sms)
-                {
-                    sms.EnsureGlResourcesCreated();   // ensure VAOs/VBOs only when context is current
-
-                    // Mesh (textured/lambert)
-                    SetMode(0);
-                    SetModelUniform(sms.Position);
-                    
-                    // Debug before draw
-                    err = GL.GetError();
-                    if (err != ErrorCode.NoError)
-                        Debug.WriteLine($"GL error pre-RenderMesh: {err}");
-
-                    sms.RenderMesh();
-
-                    err = GL.GetError();
-                    if (err != ErrorCode.NoError)
-                        Debug.WriteLine($"GL error post-RenderMesh: {err}");
+                // if (Sprite is ShadowMeshSprite sms)
+                // {
+                //     sms.EnsureGlResourcesCreated();   // ensure VAOs/VBOs only when context is current
+                //
+                //     // Mesh (textured/lambert)
+                //     SetMode(0);
+                //     SetModelUniform(sms.Position);
+                //     
+                //     // Debug before draw
+                //     err = GL.GetError();
+                //     if (err != ErrorCode.NoError)
+                //         Debug.WriteLine($"GL error pre-RenderMesh: {err}");
+                //
+                //     sms.RenderMesh();
+                //
+                //     err = GL.GetError();
+                //     if (err != ErrorCode.NoError)
+                //         Debug.WriteLine($"GL error post-RenderMesh: {err}");
 
                     // // Shadow volume (solid translucent), only if sun is above horizon
                     // if (sms.ShowShadowVolume && sms.Shadow.Light.Y > 0f)
@@ -307,7 +334,7 @@ namespace SSCP.ShellPower {
                     //     if (err != ErrorCode.NoError)
                     //         Debug.WriteLine($"GL error post-RenderShadowOutline: {err}");
                     // }
-                }
+                // }
 
                 // Cleanup
                 GL.UseProgram(0);
@@ -337,12 +364,12 @@ namespace SSCP.ShellPower {
             GL.Viewport(0, 0, px.Width, px.Height);
         }
 
-        private void SetModelViewCamera() {
-            var position = -Vector3.UnitZ * (float)_zoom;
-            var modelview = Matrix4.LookAt(position, Vector3.Zero, Vector3.UnitY) * _rotation;
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.LoadMatrix(ref modelview);
-        }
+        // private void SetModelViewCamera() {
+        //     var position = -Vector3.UnitZ * (float)_zoom;
+        //     var modelview = Matrix4.LookAt(position, Vector3.Zero, Vector3.UnitY) * _rotation;
+        //     GL.MatrixMode(MatrixMode.Modelview);
+        //     GL.LoadMatrix(ref modelview);
+        // }
 
         // ---------- Shaders / Textures ----------
         private void InitGLShaders() {
@@ -530,29 +557,31 @@ void main(){
             return Matrix4.CreatePerspectiveFieldOfView((float)(Math.PI * fovDeg / 180.0), aspect, near, far);
         }
 
-        private void SetViewProjUniform(PixelSize px)
+        private void SetViewProjUniform(PixelSize px, float yawDeg = 0, float pitchDeg = 0, float zoomOverride = -1f)
         {
             float aspect = px.Width / Math.Max(1f, (float)px.Height);
             var proj = CreatePerspective(60f, aspect, 0.01f, 5000f);
 
-            var eye = -OpenTK.Mathematics.Vector3.UnitZ * (float)_zoom;
-            var view = Matrix4.LookAt(eye, OpenTK.Mathematics.Vector3.Zero, OpenTK.Mathematics.Vector3.UnitY) * _rotation;
+            // Build a rotation from yaw (around Y) and pitch (around X)
+            float yaw   = (float)(Math.PI / 180.0) * yawDeg;
+            float pitch = (float)(Math.PI / 180.0) * pitchDeg;
+
+            var qYaw   = OpenTK.Mathematics.Quaternion.FromAxisAngle(Vector3.UnitY, yaw);
+            var qPitch = OpenTK.Mathematics.Quaternion.FromAxisAngle(Vector3.UnitX, pitch);
+            var rot    = OpenTK.Mathematics.Quaternion.Normalize(qPitch * qYaw);
+
+            // Rotate basis directions by the quaternion
+            var forward = Vector3.Transform(-Vector3.UnitZ, rot);
+            var up      = Vector3.Transform( Vector3.UnitY, rot);
+
+            // Eye sits back along -forward
+            float zoom = zoomOverride > 0 ? zoomOverride : (float)_zoom;
+            var eye  = -forward * zoom;
+            var view = Matrix4.LookAt(eye, Vector3.Zero, up);
 
             var vp = proj * view;
-
-            if (_uViewProj >= 0)
-            {
-                GL.UniformMatrix4(_uViewProj, false, ref vp);
-                var err = GL.GetError();
-                if (err != ErrorCode.NoError)
-                    Debug.WriteLine($"GL error uploading uViewProj: {err}");
-            }
-            else
-            {
-                Debug.WriteLine("Warning: uViewProj location invalid (-1)");
-            }
+            GL.UniformMatrix4(_uViewProj, false, ref vp);
         }
-
 
         private void SetModelUniform(OpenTK.Mathematics.Vector3 pos) {
             var m = Matrix4.CreateTranslation(pos);
@@ -633,6 +662,10 @@ void main(){
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         }
         
+        private OTQ.Quaternion _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -PI / 6f);
+// ^ a gentle -30° tilt so you don’t stare edge-on
+
+        
         // ---------- Screenshot for Save Render ----------
         public Bitmap GrabScreenshot()
         {
@@ -688,18 +721,6 @@ void main(){
                 _mouseRotate = false;
         }
 
-        private void OnPointerMoved(object? sender, PointerEventArgs e) {
-            var cur = e.GetPosition(this).ToPixelPoint(VisualRoot);
-            if (_mouseRotate) {
-                float sensitivity = 1.0f / 100;
-                var xdelta = cur.X - _lastMousePx.X;
-                var ydelta = cur.Y - _lastMousePx.Y;
-                _rotation *= Matrix4.CreateRotationY(xdelta * sensitivity)
-                           * Matrix4.CreateRotationX(-ydelta * sensitivity);
-            }
-            _lastMousePx = cur;
-        }
-
         private void OnPointerWheel(object? sender, PointerWheelEventArgs e) {
             // Avalonia e.Delta.Y is in “lines”; positive is usually up
             double sensitivity = 1.0 / 300.0;
@@ -713,32 +734,39 @@ void main(){
             var msg = Marshal.PtrToStringAnsi(message, length);
             Debug.WriteLine($"[GL DEBUG] {severity} {type} {id}: {msg}");
         }
-
-        private void OnKeyDown(object? sender, KeyEventArgs e) {
-            float zoomSensitivity = 0.05f;
-            float rotateSensitivity = PI / 16;
-            bool isShift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
-            if (isShift) {
-                zoomSensitivity = .5f;
-                rotateSensitivity = PI / 2;
+        
+        private void OnPointerMoved(object? sender, PointerEventArgs e)
+        {
+            var cur = e.GetPosition(this).ToPixelPoint(VisualRoot);
+            if (_mouseRotate)
+            {
+                float s = 1.0f / 150f;
+                var yaw   = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY,  (cur.X - _lastMousePx.X) * s);
+                var pitch = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -(cur.Y - _lastMousePx.Y) * s);
+                _rotation = OTQ.Quaternion.Normalize(pitch * yaw * _rotation);
             }
+            _lastMousePx = cur;
+        }
 
-            switch (e.Key) {
+        private void OnKeyDown(object? sender, KeyEventArgs e)
+        {
+            float zoomSensitivity = 0.08f;
+            float step = PI / 12f;
+            switch (e.Key)
+            {
                 case Key.W: _zoom *= (1 - zoomSensitivity); break;
                 case Key.S: _zoom /= (1 - zoomSensitivity); break;
-                case Key.A: _rotation *= Matrix4.CreateRotationY(-rotateSensitivity); break;
-                case Key.D: _rotation *= Matrix4.CreateRotationY(rotateSensitivity); break;
+                case Key.A: _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY, -step) * _rotation; break;
+                case Key.D: _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY,  step) * _rotation; break;
 
-                case Key.X: _rotation = Matrix4.CreateRotationY(PI / 2 * (isShift ? -1 : 1)); break;
-                case Key.Y: _rotation = Matrix4.CreateRotationX(PI / 2 * (isShift ? -1 : 1)); break;
-                case Key.Z: _rotation = Matrix4.CreateRotationY(PI / 2 * (isShift ? 2 : 0)); break;
                 case Key.D0:
                 case Key.NumPad0:
-                    _rotation = Matrix4.Identity;
+                    _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -PI/6f);
                     _zoom = INITIAL_ZOOM;
                     break;
             }
         }
+
     }
 
     static class AvaloniaPointerExtensions

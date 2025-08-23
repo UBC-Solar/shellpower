@@ -108,7 +108,10 @@
             <GridSplitter Grid.Row="1" ResizeDirection="Rows" HorizontalAlignment="Stretch" Height="5" Background="#404040"/>
 
             <!-- Bottom panel: layout preview -->
-            <local:ArrayLayoutControl x:Name="OutputArrayLayout" Grid.Row="2" Editable="False"/>
+            <local:ArrayLayoutControl x:Name="OutputArrayLayout" Grid.Row="2" 
+                                      Editable="False" 
+                                      Focusable="True"
+                                      IsHitTestVisible="True"/>
           </Grid>
         </TabItem>
 
