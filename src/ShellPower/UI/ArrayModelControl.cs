@@ -46,7 +46,8 @@ namespace SSCP.ShellPower {
         private int _uSunDir, _uSampler;
         private int _uViewProj, _uModel;
         private int _uMode, _uColor;
-
+        
+        private int _uMapMin, _uMapMax, _uAxes;
 
         /* public model/view properties */
         private Sprite? _sprite;
@@ -82,13 +83,6 @@ namespace SSCP.ShellPower {
             _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
             _renderTimer.Tick += (_, __) => InvalidateVisual();
             _renderTimer.Start();
-
-            // Input wiring (Avalonia)
-            PointerPressed += OnPointerPressed;
-            PointerReleased += OnPointerReleased;
-            PointerMoved += OnPointerMoved;
-            PointerWheelChanged += OnPointerWheel;
-            KeyDown += OnKeyDown;
         }
 
         // ---------- OpenTK binding to Avalonia GL ----------
@@ -97,16 +91,6 @@ namespace SSCP.ShellPower {
             public OpenTKBindingsContext(GlInterface gl) => _gl = gl;
             public IntPtr GetProcAddress(string procName) => _gl.GetProcAddress(procName);
         }
-        
-        private static float ComputeFitZoom(ShadowMeshSprite sms, float fovDeg, float aspect)
-        {
-            var size = sms.BoundingBox.Max - sms.BoundingBox.Min;
-            float maxXZ = MathF.Max(size.X, size.Z);       // fit width/depth
-            float fovRad = MathF.PI * fovDeg / 180f;
-            // distance so max dimension fits in view, with margin
-            return (maxXZ * 0.5f) / MathF.Tan(fovRad * 0.5f) * 1.3f;
-        }
-
 
         // ---------- GL lifecycle ----------
         protected override void OnOpenGlInit(GlInterface gl) {
@@ -142,13 +126,9 @@ namespace SSCP.ShellPower {
             InitGLShaders();
             InitGLTextures();
             
-            _scratchVao = GL.GenVertexArray();
-            
             _glReady = true;
         }
         
-        private int _scratchVao;
-
         protected override void OnOpenGlDeinit(GlInterface gl) {
             try {
                 if (_shaderProg != 0) {
@@ -192,15 +172,79 @@ namespace SSCP.ShellPower {
             return new Vector3(x, y, z);
         }
         
-        private static Matrix4 BuildClipFitModelWithSpin(ShadowMeshSprite sms, float yawDeg)
+        private struct VaoBundle
         {
-            var M = BuildClipFitModel(sms);
-            var R = Matrix4.CreateFromQuaternion(
-                OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY, MathF.PI * yawDeg / 180f));
-            return R * M; // rotate, then fit
+            public int Vao, Vbo, Ebo, IndexCount;
+            public DrawElementsType IndexType;
         }
 
+        private VaoBundle _arrayVao;
+        
+        private void EnsureArrayVaoBuilt()
+        {
+            if (_arrayVao.Vao != 0 || Array?.Mesh == null) return;
+            _arrayVao = BuildVaoFromMesh(Array.Mesh);
+        }
 
+        private static VaoBundle BuildVaoFromMesh(Mesh m)
+        {
+            if (m.points.Length != m.normals.Length)
+                throw new InvalidOperationException("Array mesh points/normals mismatch.");
+
+            int vcount = m.points.Length;
+            var interleaved = new float[vcount * 6];
+            for (int i = 0; i < vcount; i++)
+            {
+                var p = m.points[i];
+                var n = m.normals[i];
+                int o = i * 6;
+                interleaved[o+0]=p.X; interleaved[o+1]=p.Y; interleaved[o+2]=p.Z;
+                interleaved[o+3]=n.X; interleaved[o+4]=n.Y; interleaved[o+5]=n.Z;
+            }
+
+            bool useShort = vcount <= ushort.MaxValue;
+            int indexCount = m.triangles.Length * 3;
+
+            int vao = GL.GenVertexArray();
+            int vbo = GL.GenBuffer();
+            int ebo = GL.GenBuffer();
+
+            GL.BindVertexArray(vao);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, interleaved.Length * sizeof(float), interleaved, BufferUsageHint.StaticDraw);
+
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
+            if (useShort)
+            {
+                var idx = new ushort[indexCount];
+                int k = 0;
+                foreach (var t in m.triangles) { idx[k++]=(ushort)t.vertexA; idx[k++]=(ushort)t.vertexB; idx[k++]=(ushort)t.vertexC; }
+                GL.BufferData(BufferTarget.ElementArrayBuffer, idx.Length * sizeof(ushort), idx, BufferUsageHint.StaticDraw);
+            }
+            else
+            {
+                var idx = new uint[indexCount];
+                int k = 0;
+                foreach (var t in m.triangles) { idx[k++]=(uint)t.vertexA; idx[k++]=(uint)t.vertexB; idx[k++]=(uint)t.vertexC; }
+                GL.BufferData(BufferTarget.ElementArrayBuffer, idx.Length * sizeof(uint), idx, BufferUsageHint.StaticDraw);
+            }
+
+            // aPos
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 6*sizeof(float), (IntPtr)0);
+            // aNormal
+            GL.EnableVertexAttribArray(1);
+            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 6*sizeof(float), (IntPtr)(3*sizeof(float)));
+
+            GL.BindVertexArray(0);
+
+            return new VaoBundle {
+                Vao = vao, Vbo = vbo, Ebo = ebo, IndexCount = indexCount,
+                IndexType = useShort ? DrawElementsType.UnsignedShort : DrawElementsType.UnsignedInt
+            };
+        }
+        
         protected override void OnOpenGlRender(GlInterface gl, int framebuffer)
         {
             if (!_glReady) return;
@@ -274,16 +318,36 @@ namespace SSCP.ShellPower {
                     
                     sms.RebuildOutlineBuffer();       // outline uses silhouette edges
                     sms.UpdateShadowVolumeVertices(); // volume uses same
-                    GL.Uniform3(_uSunDir, new Vector3(sms.Shadow.Light.X, sms.Shadow.Light.Y, sms.Shadow.Light.Z));       // after any SetUniforms()
                     
-                    // ---- lambert state (no hiding) ----
-                    SetMode(0);
+                    // sun dir normalized (defensive)
+                    var L = new Vector3(sms.Shadow.Light.X, sms.Shadow.Light.Y, sms.Shadow.Light.Z);
+                    if (L.LengthSquared < 1e-12f) L = new Vector3(0,1,0);
+                    else L = Vector3.Normalize(L);
+                    GL.Uniform3(_uSunDir, L);
                     
-                    SetModelUniform(sms.Position);    // translation only
+                    EnsureArrayVaoBuilt();
+                    
+                    SetMode(1);
+                    SetColor(0.85f, 0.85f, 0.85f, 1f);
+                    SetModelUniform(sms.Position);
                     GL.Enable(EnableCap.DepthTest);
                     GL.Enable(EnableCap.CullFace);
                     GL.FrontFace(FrontFaceDirection.Cw);
                     sms.RenderMesh();
+                    
+                    // 2) Array deck, with projector texture
+                    if (_arrayVao.Vao != 0)
+                    {
+                        SetMode(0);
+                        SetTexture();                         // ensures _texArray bound to unit 0
+                        GL.Uniform1(_uSampler, 0);
+
+                        SetProjectorAutoFromArrayMesh();        // <-- the important part
+
+                        GL.BindVertexArray(_arrayVao.Vao);
+                        GL.DrawElements(PrimitiveType.Triangles, _arrayVao.IndexCount, _arrayVao.IndexType, IntPtr.Zero);
+                        GL.BindVertexArray(0);
+                    }
                     
                     if (sms.ShowShadowVolume && sms.Shadow.Light.Y > 0f && sms.HasVolume)
                     {
@@ -353,30 +417,38 @@ layout(location=1) in vec3 aNormal;
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 
-uniform float x0, x1, z0, z1;
+uniform vec2  mapMin;   // object-space mins
+uniform vec2  mapMax;   // object-space maxs
+uniform ivec2 axes;     // 0=X, 1=Y, 2=Z
+
 uniform vec3  sunDirection;
 
-out vec2 vTex;
+out vec2  vTex;
 out float vCos;
 
-void main(){
-    vec4 world = uModel * vec4(aPos,1.0);
+float pickComponent(vec3 v, int ix) {
+    if (ix == 0) return v.x;
+    if (ix == 1) return v.y;
+    return v.z;
+}
+
+void main() {
+    // Positions still transformed for drawing
+    vec4 world = uModel * vec4(aPos, 1.0);
     gl_Position = uViewProj * world;
 
-    // Safe texture coords: guard against divide by zero
-    float dx = x1 - x0;
-    float dz = z1 - z0;
-    vTex = vec2(0.0, 0.0);
-    if (abs(dx) > 1e-6 && abs(dz) > 1e-6) {
-        vTex = vec2((aPos.x - x0) / dx,
-                    (aPos.z - z0) / dz);
+    // BUT: map texcoords from OBJECT space to avoid any model translate/scale
+    float uu = pickComponent(aPos, axes.x);
+    float vv = pickComponent(aPos, axes.y);
+
+    vec2 span = mapMax - mapMin;
+    vTex = vec2(0.0);
+    if (abs(span.x) > 1e-6 && abs(span.y) > 1e-6) {
+        vTex = (vec2(uu, vv) - mapMin) / span;
     }
 
-    // simple lambert factor
     vec3 n = normalize(aNormal);
-    vec3 l = sunDirection;
-    float lenL = length(l);
-    l = (lenL > 1e-6) ? (l / lenL) : vec3(0.0, 1.0, 0.0); // fallback up-vector
+    vec3 l = normalize(sunDirection);
     vCos = dot(n, l);
 }
 ";
@@ -412,6 +484,9 @@ void main(){
     } else {
         FragColor = uColor;
     }
+
+    vec2 tc = clamp(vTex, 0.0, 1.0);
+    //FragColor = vec4(tc, 0.0, 1.0); // red=s, green=t
 }
 "
 ;
@@ -441,18 +516,18 @@ void main(){
             GL.DeleteShader(shaderFrag);
 
             // uniform locations
-            _uX0 = GL.GetUniformLocation(_shaderProg, "x0");
-            _uX1 = GL.GetUniformLocation(_shaderProg, "x1");
-            _uZ0 = GL.GetUniformLocation(_shaderProg, "z0");
-            _uZ1 = GL.GetUniformLocation(_shaderProg, "z1");
-            _uSunDir   = GL.GetUniformLocation(_shaderProg, "sunDirection");
-            _uSampler  = GL.GetUniformLocation(_shaderProg, "solarCells");
-            _uViewProj = GL.GetUniformLocation(_shaderProg, "uViewProj");
-            _uModel    = GL.GetUniformLocation(_shaderProg, "uModel");
-            _uMode     = GL.GetUniformLocation(_shaderProg, "uMode");
-            _uColor    = GL.GetUniformLocation(_shaderProg, "uColor");
+            _uMapMin  = GL.GetUniformLocation(_shaderProg, "mapMin");
+            _uMapMax  = GL.GetUniformLocation(_shaderProg, "mapMax");
+            _uAxes    = GL.GetUniformLocation(_shaderProg, "axes");
+            _uSunDir  = GL.GetUniformLocation(_shaderProg, "sunDirection");
+            _uSampler = GL.GetUniformLocation(_shaderProg, "solarCells");
+            _uViewProj= GL.GetUniformLocation(_shaderProg, "uViewProj");
+            _uModel   = GL.GetUniformLocation(_shaderProg, "uModel");
+            _uMode    = GL.GetUniformLocation(_shaderProg, "uMode");
+            _uColor   = GL.GetUniformLocation(_shaderProg, "uColor");
 
-            Debug.Assert(_uX0!=-1 && _uX1!=-1 && _uZ0!=-1 && _uZ1!=-1);
+            // New assert set:
+            Debug.Assert(_uMapMin!=-1 && _uMapMax!=-1 && _uAxes!=-1);
             Debug.Assert(_uSunDir!=-1 && _uSampler!=-1 && _uViewProj!=-1 && _uModel!=-1);
             Debug.Assert(_uMode!=-1 && _uColor!=-1);
         }
@@ -472,6 +547,72 @@ void main(){
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
                 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
         }
+        
+        private void SetProjectorAutoFromArrayMesh()
+{
+    Debug.Assert(Array != null);
+
+    // Array deck geometry in OBJECT space
+    var bb = Array.Mesh.BoundingBox;
+    float bx0 = bb.Min.X, bx1 = bb.Max.X;
+    float bz0 = bb.Min.Z, bz1 = bb.Max.Z;
+    float bSpanX = MathF.Max(1e-12f, bx1 - bx0);
+    float bSpanZ = MathF.Max(1e-12f, bz1 - bz0);
+
+    // Texture aspect. Prefer actual image; fallback to LayoutBounds aspect if image missing.
+    float texAspect = 1f;
+    if (_lastLayoutTex != null)
+        texAspect = (float)_lastLayoutTex.Width / MathF.Max(1, _lastLayoutTex.Height);
+    else
+    {
+        var lb = Array.LayoutBounds;
+        float lSpanX = MathF.Abs((float)(lb.MaxX - lb.MinX));
+        float lSpanZ = MathF.Abs((float)(lb.MaxZ - lb.MinZ));
+        if (lSpanZ > 1e-12f) texAspect = lSpanX / lSpanZ;
+    }
+
+    // Two candidates:
+    // A) u<=X, v<=Z  → aspect = X/Z
+    // B) u<=Z, v<=X  → aspect = Z/X
+    float aspectA = bSpanX / bSpanZ;
+    float aspectB = bSpanZ / bSpanX;
+
+    bool useA = MathF.Abs(aspectA - texAspect) <= MathF.Abs(aspectB - texAspect);
+
+    // We typically want V flipped so “top row” of the texture lands at larger Z (top of model).
+    bool flipV = true;
+
+    int axU, axV;           // shader 'axes' (0=X, 1=Y, 2=Z)
+    float uMin, uMax, vMin, vMax;
+
+    if (useA)
+    {
+        // u <- X, v <- Z
+        axU = 0; axV = 2;
+        uMin = bx0; uMax = bx1;
+        vMin = flipV ? bz1 : bz0;
+        vMax = flipV ? bz0 : bz1;
+    }
+    else
+    {
+        // u <- Z, v <- X  (swap)
+        axU = 2; axV = 0;
+        uMin = bz0; uMax = bz1;
+        vMin = flipV ? bx1 : bx0;
+        vMax = flipV ? bx0 : bx1;
+    }
+
+    // Upload mapping (shader builds UV from aPos using these mins/maxes and selected axes)
+    GL.Uniform2(_uMapMin, uMin, vMin);
+    GL.Uniform2(_uMapMax, uMax, vMax);
+    GL.Uniform2(_uAxes, axU, axV);
+
+#if DEBUG
+    Debug.WriteLine($"[UV-Auto] useA={useA}  texAspect={texAspect:0.###}  " +
+                    $"meshSpan=({bSpanX:0.###},{bSpanZ:0.###})  " +
+                    $"mapMin=({uMin:0.###},{vMin:0.###}) mapMax=({uMax:0.###},{vMax:0.###})  axes=({axU},{axV})");
+#endif
+}
 
         private void SetUniforms()
         {
@@ -505,33 +646,7 @@ void main(){
         private static Matrix4 CreatePerspective(float fovDeg, float aspect, float near, float far) {
             return Matrix4.CreatePerspectiveFieldOfView((float)(Math.PI * fovDeg / 180.0), aspect, near, far);
         }
-
-        private void SetViewProjUniform(PixelSize px, float yawDeg = 0, float pitchDeg = 0, float zoomOverride = -1f)
-        {
-            float aspect = px.Width / Math.Max(1f, (float)px.Height);
-            var proj = CreatePerspective(60f, aspect, 0.01f, 5000f);
-
-            // Build a rotation from yaw (around Y) and pitch (around X)
-            float yaw   = (float)(Math.PI / 180.0) * yawDeg;
-            float pitch = (float)(Math.PI / 180.0) * pitchDeg;
-
-            var qYaw   = OpenTK.Mathematics.Quaternion.FromAxisAngle(Vector3.UnitY, yaw);
-            var qPitch = OpenTK.Mathematics.Quaternion.FromAxisAngle(Vector3.UnitX, pitch);
-            var rot    = OpenTK.Mathematics.Quaternion.Normalize(qPitch * qYaw);
-
-            // Rotate basis directions by the quaternion
-            var forward = Vector3.Transform(-Vector3.UnitZ, rot);
-            var up      = Vector3.Transform( Vector3.UnitY, rot);
-
-            // Eye sits back along -forward
-            float zoom = zoomOverride > 0 ? zoomOverride : (float)_zoom;
-            var eye  = -forward * zoom;
-            var view = Matrix4.LookAt(eye, Vector3.Zero, up);
-
-            var vp = proj * view;
-            GL.UniformMatrix4(_uViewProj, false, ref vp);
-        }
-
+        
         private void SetModelUniform(OpenTK.Mathematics.Vector3 pos) {
             var m = Matrix4.CreateTranslation(pos);
             GL.UniformMatrix4(_uModel, false, ref m);
@@ -611,7 +726,7 @@ void main(){
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         }
         
-        private OTQ.Quaternion _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -PI / 6f);
+        // private OTQ.Quaternion _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -PI / 6f);
 // ^ a gentle -30° tilt so you don’t stare edge-on
 
         
@@ -655,78 +770,12 @@ void main(){
             ms.Position = 0;
             return new Bitmap(ms);
         }
-
-        // ---------- Input (mouse, wheel, keyboard) ----------
-        private void OnPointerPressed(object? sender, PointerPressedEventArgs e) {
-            Focus(); // ensure we receive KeyDown
-            _lastMousePx = e.GetPosition(this).ToPixelPoint(VisualRoot);
-            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-                _mouseRotate = true;
-        }
-
-        private void OnPointerReleased(object? sender, PointerReleasedEventArgs e) {
-            _lastMousePx = e.GetPosition(this).ToPixelPoint(VisualRoot);
-            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-                _mouseRotate = false;
-        }
-
-        private void OnPointerWheel(object? sender, PointerWheelEventArgs e) {
-            // Avalonia e.Delta.Y is in “lines”; positive is usually up
-            double sensitivity = 1.0 / 300.0;
-            _zoom *= Math.Exp(-e.Delta.Y * 120.0 * sensitivity); // approximate WinForms wheel step (120)
-            _zoom = Math.Clamp(_zoom, 0.01, 1e6);
-        }
-
+        
         private OpenTK.Graphics.OpenGL.DebugProc? _debugProc;
         private void DebugCallback(DebugSource source, DebugType type, int id, DebugSeverity severity, int length, IntPtr message, IntPtr userParam)
         {
             var msg = Marshal.PtrToStringAnsi(message, length);
             Debug.WriteLine($"[GL DEBUG] {severity} {type} {id}: {msg}");
-        }
-        
-        private void OnPointerMoved(object? sender, PointerEventArgs e)
-        {
-            var cur = e.GetPosition(this).ToPixelPoint(VisualRoot);
-            if (_mouseRotate)
-            {
-                float s = 1.0f / 150f;
-                var yaw   = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY,  (cur.X - _lastMousePx.X) * s);
-                var pitch = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -(cur.Y - _lastMousePx.Y) * s);
-                _rotation = OTQ.Quaternion.Normalize(pitch * yaw * _rotation);
-            }
-            _lastMousePx = cur;
-        }
-
-        private void OnKeyDown(object? sender, KeyEventArgs e)
-        {
-            float zoomSensitivity = 0.08f;
-            float step = PI / 12f;
-            switch (e.Key)
-            {
-                case Key.W: _zoom *= (1 - zoomSensitivity); break;
-                case Key.S: _zoom /= (1 - zoomSensitivity); break;
-                case Key.A: _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY, -step) * _rotation; break;
-                case Key.D: _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitY,  step) * _rotation; break;
-
-                case Key.D0:
-                case Key.NumPad0:
-                    _rotation = OTQ.Quaternion.FromAxisAngle(OTQ.Vector3.UnitX, -PI/6f);
-                    _zoom = INITIAL_ZOOM;
-                    break;
-            }
-        }
-
-    }
-
-    static class AvaloniaPointerExtensions
-    {
-        public static PixelPoint ToPixelPoint(this Point p, IRenderRoot? root)
-        {
-            var scale = root?.RenderScaling ?? 1.0;
-            return new PixelPoint(
-                (int)Math.Round(p.X * scale),
-                (int)Math.Round(p.Y * scale)
-            );
         }
     }
 }
