@@ -71,7 +71,12 @@ void main(){
     vCosRule = max(n.z, 0.0);
     float lenN = length(n);
     vAreaMult = clamp(lenN / max(n.z, 1e-6), 0.0, 24.0);
-    vLayoutUV = vec2((aPos.x - x0) / (x1 - x0), (aPos.z - z0) / (z1 - z0));
+
+    float dx = max(x1 - x0, 1e-6);
+    float dz = max(z1 - z0, 1e-6);
+    vec2 uv = vec2((aPos.x - x0) / dx, (aPos.z - z0) / dz);
+    vLayoutUV = clamp(uv, 0.0, 1.0);
+
 }";
 
             var fsSrc = @"#version 330 core
@@ -95,6 +100,13 @@ void main(){
     oCells = vec4(solarCell.rgb, 1.0);
     oWatts = encodeFloat(watts10k);
     oArea  = encodeFloat(vAreaMult * 4.0);
+
+    //oCells = texture(solarCells, vec2(0.5, 0.5));
+    //oWatts = vec4(0,0,0,1);
+    //oArea  = vec4(0,0,0,1);
+    oCells = texture(solarCells, vec2(0.5, 0.5));
+    oWatts = vec4(0,0,0,1);
+    oArea  = vec4(0,0,0,1);
 }";
 
             GL.ShaderSource(_vs, vsSrc);
@@ -260,49 +272,116 @@ void main(){
             Debug.WriteLine($"finished sim step! {(t2 - t1).TotalSeconds:0.000}s {output.WattsInsolation:0.0}/{output.WattsOutput:0.0}W");
             return output;
         }
+        
+public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
+{
+    GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
 
-        public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
-        {
-            GL.UseProgram(_prog);
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-            GL.DrawBuffers(3, new[] { DrawBuffersEnum.ColorAttachment0, DrawBuffersEnum.ColorAttachment1, DrawBuffersEnum.ColorAttachment2 });
-            GL.Viewport(0, 0, _w, _h);
-            GL.ClearColor(1f, 1f, 1f, 1f);
-            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+    var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+    if (fboStatus != FramebufferErrorCode.FramebufferComplete)
+        throw new InvalidOperationException($"FBO incomplete: {fboStatus}");
 
-            var center = ComputeArrayCenter(array);
-            double maxDim = ComputeArrayMaxDimension(array);
-            Matrix4 mvp = BuildSunPOVMvp(sunDir, center, maxDim);
-            
-            GL.UseProgram(_prog);
+    GL.Viewport(0, 0, _w, _h);
+    GL.DrawBuffers(3, new[]
+    {
+        DrawBuffersEnum.ColorAttachment0,
+        DrawBuffersEnum.ColorAttachment1,
+        DrawBuffersEnum.ColorAttachment2
+    });
 
-            // // Get the 4 column locations of the mat4 uniform
-            // int c0 = GL.GetUniformLocation(_prog, "uMvp[0]");
-            // int c1 = GL.GetUniformLocation(_prog, "uMvp[1]");
-            // int c2 = GL.GetUniformLocation(_prog, "uMvp[2]");
-            // int c3 = GL.GetUniformLocation(_prog, "uMvp[3]");
-            //
-            // // Build column vectors (mat4 is column-major in GLSL)
-            // var col0 = new OpenTK.Mathematics.Vector4(mvp.M11, mvp.M21, mvp.M31, mvp.M41);
-            // var col1 = new OpenTK.Mathematics.Vector4(mvp.M12, mvp.M22, mvp.M32, mvp.M42);
-            // var col2 = new OpenTK.Mathematics.Vector4(mvp.M13, mvp.M23, mvp.M33, mvp.M43);
-            // var col3 = new OpenTK.Mathematics.Vector4(mvp.M14, mvp.M24, mvp.M34, mvp.M44);
-            //
-            // // Send each column with Uniform4 (no unsafe needed)
-            // GL.Uniform4f(c0, 1, col0);
-            // GL.Uniform4f(c1, 1, col1);
-            // GL.Uniform4f(c2, 1, col2);
-            // GL.Uniform4f(c3, 1, col3);
+    GL.ClearColor(0f, 0f, 0f, 1f);
+    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, _texArray);
+    // Disable rejects for now
+    GL.Disable(EnableCap.CullFace);
+    GL.Disable(EnableCap.DepthTest);
 
-            var sprite = new MeshSprite(array.Mesh); // assumes VAO uses locations 0/1/2
-            sprite.Render(mvp, Matrix4.Identity);
+    // ---- BIND PROGRAM FIRST ----
+    GL.UseProgram(_prog);
 
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        }
+    // Now it’s safe to query/assert the current program
+    GL.GetInteger(GetPName.CurrentProgram, out int curProg);
+    Debug.Assert(curProg == _prog, $"Wrong program bound: {curProg} vs expected {_prog}");
+    Debug.Assert(_uSolarCells >= 0, "uSolarCells location is -1");
 
+    // Build MVP = proj * view * model
+    var center = ComputeArrayCenter(array);
+    double maxDim = ComputeArrayMaxDimension(array);
+    var eye  = center + sunDir * 50f;
+    var view = Matrix4.LookAt(TkVec(eye), TkVec(center), new OpenTK.Mathematics.Vector3(0, 1, 0));
+    float half = (float)(maxDim * 0.5);
+    var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
+    Matrix4 model = Matrix4.Identity;
+    Matrix4 mvp = proj * view * model;
+    GL.UniformMatrix4(_uMvp, false, ref mvp);
+
+    // Bind layout texture to unit 0 and set the sampler to 0 (after UseProgram!)
+    GL.ActiveTexture(TextureUnit.Texture0);
+    GL.BindTexture(TextureTarget.Texture2D, _texArray);
+    GL.Uniform1(_uSolarCells, 0);
+
+    // Optional: log sampler value (safe now the program is bound)
+    // int[] samplerVal = new int[1];
+    // GL.GetUniform(_prog, _uSolarCells, samplerVal);
+    // Debug.WriteLine($"uSolarCells={samplerVal[0]} (expect 0)");
+
+    // Draw with VAO-only path (no program changes inside)
+    using var sprite = new MeshSprite(array.Mesh);
+    GL.BindVertexArray(sprite.Vao);
+
+    // Quick geometry sanity
+    GL.GetInteger(GetPName.ElementArrayBufferBinding, out int ebo);
+    Debug.Assert(ebo != 0, "No EBO bound in VAO");
+    Debug.Assert(sprite.IndexCount > 0, "IndexCount == 0");
+
+    GL.GetInteger(GetPName.CurrentProgram, out curProg);
+    GL.GetInteger(GetPName.FramebufferBinding, out int curFbo);
+    GL.GetInteger(GetPName.DrawFramebufferBinding, out int curDrawFbo);
+    GL.GetInteger(GetPName.ReadFramebufferBinding, out int curReadFbo);
+    GL.GetInteger(GetPName.ActiveTexture, out int activeTex); // should be Texture0 + 0
+    int[] samplerVal = new int[1];
+    GL.GetUniform(_prog, _uSolarCells, samplerVal);
+    Debug.WriteLine($"prog={curProg} fbo={curFbo}/{curDrawFbo}/{curReadFbo} activeTex={activeTex} sampler={samplerVal[0]}");
+    
+    GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+    GL.BindVertexArray(0);
+
+    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+}
+        // public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
+        // {
+        //     // bind your MRT FBO & state
+        //     GL.UseProgram(_prog);
+        //     GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        //     GL.DrawBuffers(3, new[] {
+        //         DrawBuffersEnum.ColorAttachment0,
+        //         DrawBuffersEnum.ColorAttachment1,
+        //         DrawBuffersEnum.ColorAttachment2
+        //     });
+        //     GL.Viewport(0, 0, _w, _h);
+        //     GL.ClearColor(0f, 0f, 0f, 1f);
+        //     GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        //
+        //     // build and upload MVP
+        //     var center = ComputeArrayCenter(array);
+        //     double maxDim = ComputeArrayMaxDimension(array);
+        //     Matrix4 mvp = BuildSunPOVMvp(sunDir, center, maxDim, Matrix4.Identity);
+        //     GL.UniformMatrix4(_uMvp, false, ref mvp);
+        //
+        //     // textures/samplers
+        //     GL.ActiveTexture(TextureUnit.Texture0);
+        //     GL.BindTexture(TextureTarget.Texture2D, _texArray);
+        //     GL.Uniform1(_uSolarCells, 0);
+        //
+        //     // draw with YOUR program (bind VAO directly)
+        //     var sprite = new MeshSprite(array.Mesh);   // assumes this builds/owns a VAO
+        //     GL.BindVertexArray(sprite.Vao);            // attrib 0 = pos, 1 = normal
+        //     GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+        //     GL.BindVertexArray(0);
+        //
+        //     GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        // }
+        //
         private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir, System.Numerics.Vector3 modelCenter, double modelMaxDim)
         {
             var eye = modelCenter + sunDir * 50f;
@@ -319,7 +398,9 @@ void main(){
             GL.Uniform1(_uX1, (float)array.LayoutBounds.MaxX);
             GL.Uniform1(_uZ0, (float)array.LayoutBounds.MinZ);
             GL.Uniform1(_uZ1, (float)array.LayoutBounds.MaxZ);
-
+            
+            Debug.WriteLine($"layout bounds x0={array.LayoutBounds.MinX}, x1={array.LayoutBounds.MaxX}, z0={array.LayoutBounds.MinZ}, z1={array.LayoutBounds.MaxZ}");
+            
             if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
             {
                 _cacheSolarCells = array.LayoutTexture;
@@ -351,7 +432,16 @@ void main(){
             // Ensure we have a single, tightly-packed RGBA buffer
             var raw = new byte[img.Width * img.Height * 4];
             img.CopyPixelDataTo(raw); // ImageSharp guarantees RGBA order for Rgba32
-
+            
+            // Sanity: count non-black pixels in the CPU buffer
+            int nz = 0;
+            for (int i = 0; i < raw.Length; i += 4)
+            {
+                byte r = raw[i+0], g = raw[i+1], b = raw[i+2]; // RGBA order
+                if (r != 0 || g != 0 || b != 0) { nz++; break; } // early exit; even 1 is enough
+            }
+            
+            Debug.WriteLine($"layout CPU buffer hasNonBlack={(nz > 0)} size={img.Width}x{img.Height}");
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _texArray);
 
@@ -369,8 +459,25 @@ void main(){
             SetTexParamsBound(TextureTarget.Texture2D);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBaseLevel, 0);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0);
-
-            GL.BindTexture(TextureTarget.Texture2D, 0);
+            //
+            // // Read back a small sample from GPU to confirm non-zero data arrived
+            // var back = new byte[Math.Min(64, img.Width) * Math.Min(64, img.Height) * 4];
+            // GL.GetTexImage(TextureTarget.Texture2D, 0, PixelFormat.Rgba, PixelType.UnsignedByte, back);
+            //
+            // bool gpuHasNonBlack = false;
+            // for (int i = 0; i < back.Length; i += 4)
+            // {
+            //     if (back[i+0] != 0 || back[i+1] != 0 || back[i+2] != 0) { gpuHasNonBlack = true; break; }
+            // }
+            // Debug.WriteLine($"layout GPU sample hasNonBlack={gpuHasNonBlack}");
+            //
+            // GL.BindTexture(TextureTarget.Texture2D, 0);
+            //
+            // int tw=0, th=0;
+            // GL.BindTexture(TextureTarget.Texture2D, _texArray);
+            // GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureWidth, out tw);
+            // GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureHeight, out th);
+            // Debug.WriteLine($"layout tex size = {tw}x{th}");
         }
 
         private float[] ReadFloatTexture(FramebufferAttachment attachment, double scale)
@@ -391,7 +498,7 @@ void main(){
                 for (int i = 0; i < decoded.Length; i++)
                 {
                     byte r = buf[i * 4 + 0], g = buf[i * 4 + 1], b = buf[i * 4 + 2], a = buf[i * 4 + 3];
-                    if (r == 255 && g == 255 && b == 255) continue;
+                    if (r == 0 && g == 0 && b == 0) continue;
                     Debug.Assert(a == 255);
                     Debug.Assert(r % 2 == 0 && r < 200);
                     Debug.Assert(b == 0);
@@ -404,6 +511,20 @@ void main(){
                 ArrayPool<byte>.Shared.Return(buf);
                 GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             }
+        }
+        
+        private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir,
+            System.Numerics.Vector3 modelCenter,
+            double modelMaxDim,
+            Matrix4 model)
+        {
+            var eye  = modelCenter + sunDir * 50f;
+            var view = Matrix4.LookAt(TkVec(eye), TkVec(modelCenter), new OpenTK.Mathematics.Vector3(0, 1, 0));
+            float half = (float)(modelMaxDim * 0.5);
+            var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
+
+            // GLSL multiplies column-major with vectors on the right ⇒ proj * view * model
+            return proj * view * model;
         }
 
 
@@ -431,7 +552,9 @@ void main(){
             }
             return colors;
         }
-
+        
+        static bool IsBackground(Rgba32 c) => c.R == 0 && c.G == 0 && c.B == 0;
+        
         private ArraySimulationStepOutput AnalyzeComputeTex(ArraySpec array, double wPerM2Insolation, double wPerM2Indirect, double cTemp)
         {
             var texColors = ReadColorTexture(FramebufferAttachment.ColorAttachment0);
@@ -459,7 +582,9 @@ void main(){
             for (int i = 0; i < _w * _h; i++)
             {
                 var color = texColors[i];
-                if (ColorUtils.IsGrayscale(color)) continue; // TODO: implement for ImageSharp
+                
+                if (IsBackground(color)) continue;  // ONLY skip background now
+
                 if (colorToId.TryGetValue(color, out int id))
                 {
                     wattsIn[id] += texWattsIn[i];
@@ -497,14 +622,18 @@ void main(){
 
                 for (int j = 0; j < cellStr.Cells.Count; j++)
                 {
-                    double cellWattsIn = wattsIn[cellIx++];
+                    double cellWattsIn = wattsIn[cellIx];
+                    double cellLitArea = areas[cellIx];     // <-- use the matching cell index
+                    cellIx++;                                // advance after using it
+
                     double cellInsolation = cellWattsIn / cellSpec.Area;
                     var cellSweep = CellSimulator.CalcSweep(cellSpec, cellInsolation, cTemp);
+
                     cellSweeps[j] = cellSweep;
                     stringWattsIn += cellWattsIn;
                     stringWattsOutByCell += cellSweep.Pmp;
                     totalWattsOutByCell += cellSweep.Pmp;
-                    stringLitArea += areas[s]; // preserves legacy behavior
+                    stringLitArea += cellLitArea;           // <-- accumulate correctly
                 }
 
                 strings[s] = new ArraySimStringOutput
@@ -514,12 +643,11 @@ void main(){
                     IVTrace = StringSimulator.CalcStringIV(cellStr, cellSweeps, array.BypassDiodeSpec),
                     String = cellStr,
                     Area = cellStr.Cells.Count * cellSpec.Area,
-                    AreaShaded = 0,
+                    AreaShaded = 0, // set below
                     WattsOutputIdeal = CellSimulator.CalcSweep(cellSpec, wPerM2Insolation, cTemp).Pmp * cellStr.Cells.Count,
                 };
                 strings[s].WattsOutput = strings[s].IVTrace.Pmp;
-                strings[s].AreaShaded = strings[s].Area - stringLitArea;
-                totalWattsOutByString += strings[s].IVTrace.Pmp;
+                strings[s].AreaShaded = Math.Max(0.0, strings[s].Area - stringLitArea);
             }
 
             return new ArraySimulationStepOutput
