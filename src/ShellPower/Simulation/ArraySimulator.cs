@@ -36,6 +36,13 @@ namespace SSCP.ShellPower
         private int _w = COMPUTE_TEX_SIZE, _h = COMPUTE_TEX_SIZE;
 
         private bool _glInit;
+        
+        private bool _preview = true; // set to false to hide (but keep computing)
+        public bool Preview
+        {
+            get => _preview;
+            set => _preview = value;
+        }
 
         public ArraySimulator() { }
 
@@ -488,6 +495,32 @@ void main(){
             var err = GL.GetError();
             if (err != ErrorCode.NoError) Debug.WriteLine($"{where}: GL ERROR = {err}");
         }
+        
+        // Preview: blit CA0 from our offscreen FBO to a target framebuffer (e.g., the control's 'fb')
+        public void BlitCellsTo(int drawFb, int dstW, int dstH)
+        {
+            // Read from our offscreen FBO's COLOR_ATTACHMENT0
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fbo);
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
+
+            // Draw to the provided framebuffer (Avalonia passes it into OnOpenGlRender)
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, drawFb);
+
+            // Be conservative: no scissor
+            GL.Disable(EnableCap.ScissorTest);
+
+            // Blit color (nearest so it's crisp)
+            GL.BlitFramebuffer(
+                0, 0, _w, _h,
+                0, 0, dstW, dstH,
+                ClearBufferMask.ColorBufferBit,
+                BlitFramebufferFilter.Nearest
+            );
+
+            // Cleanup
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        }
 
         private Rgba32[] ReadColorTexture(FramebufferAttachment attachment)
         {
@@ -734,18 +767,19 @@ void main(){
                 else
                 {
                     // nothing queued; clear default FB for Avalonia’s sake
-                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-                    GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
                     
-                    GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
-                        FramebufferAttachment.ColorAttachment0,
-                        FramebufferParameterName.FramebufferAttachmentObjectType, out int t0);
-                    GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
-                        FramebufferAttachment.ColorAttachment0,
-                        FramebufferParameterName.FramebufferAttachmentObjectName, out int n0);
-                    Debug.WriteLine($"At draw: CA0 type={(FramebufferAttachmentObjectType)t0} name={n0}");
-                    
-                    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+                    // GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                    // GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
+                    //
+                    // GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
+                    //     FramebufferAttachment.ColorAttachment0,
+                    //     FramebufferParameterName.FramebufferAttachmentObjectType, out int t0);
+                    // GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
+                    //     FramebufferAttachment.ColorAttachment0,
+                    //     FramebufferParameterName.FramebufferAttachmentObjectName, out int n0);
+                    // Debug.WriteLine($"At draw: CA0 type={(FramebufferAttachmentObjectType)t0} name={n0}");
+                    //
+                    // GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
                 }
             }
             catch (Exception ex)
@@ -757,11 +791,27 @@ void main(){
                 _pending = null;
                 _explicit = null;
                 _tcs = null;
+                
+                if (_sim.Preview)
+                {
+                    var scale = (VisualRoot as Avalonia.Controls.TopLevel)?.RenderScaling ?? 1.0;
+                    int w = Math.Max(1, (int)Math.Round(Bounds.Width  * scale));
+                    int h = Math.Max(1, (int)Math.Round(Bounds.Height * scale));
 
-                // leave the default FB in a clean state
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-                GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
-                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+// (optional, helps some drivers)
+                    OpenTK.Graphics.OpenGL.GL.BindFramebuffer(OpenTK.Graphics.OpenGL.FramebufferTarget.DrawFramebuffer, fb);
+                    OpenTK.Graphics.OpenGL.GL.Viewport(0, 0, w, h);
+                    OpenTK.Graphics.OpenGL.GL.BindFramebuffer(OpenTK.Graphics.OpenGL.FramebufferTarget.DrawFramebuffer, 0);
+
+                    _sim.BlitCellsTo(fb, w, h);                }
+                else
+                {
+                    // leave the default FB in a clean state
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                    GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
+                    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+                    
+                }
             }
         }
     }
