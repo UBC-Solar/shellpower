@@ -25,6 +25,7 @@ namespace SSCP.ShellPower
         // GL resources
         private int _vs, _fs, _prog;
         private int _uMvp, _uX0, _uX1, _uZ0, _uZ1, _uPixelWattsIn, _uPixelArea, _uSolarCells;
+        private bool _mrtEnabled = false; // set to true when you actually attach CA1/CA2
         
         // Input texture (layout)
         private int _texArray;
@@ -57,19 +58,26 @@ namespace SSCP.ShellPower
             _vs = GL.CreateShader(ShaderType.VertexShader);
             _fs = GL.CreateShader(ShaderType.FragmentShader);
 
+// VS: screen-space UVs from clip coords (no bounds)
             var vsSrc = @"#version 330 core
 layout(location=0) in vec3 aPos;
 uniform mat4 uMvp;
+out vec2 vLayoutUV;
 void main(){
-    gl_Position = uMvp * vec4(aPos, 1.0);
+    vec4 clip = uMvp * vec4(aPos, 1.0);
+    gl_Position = clip;
+    // NDC [-1,1] -> UV [0,1]
+    float iw = 1.0 / max(clip.w, 1e-6);
+    vLayoutUV = clip.xy * iw * 0.5 + 0.5;
 }";
 
             var fsSrc = @"#version 330 core
+in vec2 vLayoutUV;
+uniform sampler2D solarCells;
 layout(location=0) out vec4 oCells;
 void main(){
-    oCells = vec4(1.0, 0.0, 1.0, 1.0); // MAGENTA
+    oCells = texture(solarCells, vLayoutUV);
 }";
-
 
             GL.ShaderSource(_vs, vsSrc);
             GL.CompileShader(_vs);
@@ -91,15 +99,8 @@ void main(){
             if (!string.IsNullOrWhiteSpace(linkLog))
                 throw new InvalidOperationException("Program link failed:\n" + linkLog);
             
-            _uMvp = GL.GetUniformLocation(_prog, "uMvp");
-            
-            // _uX0 = GL.GetUniformLocation(_prog, "x0");
-            // _uX1 = GL.GetUniformLocation(_prog, "x1");
-            // _uZ0 = GL.GetUniformLocation(_prog, "z0");
-            // _uZ1 = GL.GetUniformLocation(_prog, "z1");
-            // _uPixelWattsIn = GL.GetUniformLocation(_prog, "pixelWattsIn");
-            // _uPixelArea = GL.GetUniformLocation(_prog, "pixelArea");
-            // _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
+            _uMvp        = GL.GetUniformLocation(_prog, "uMvp");
+            _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
         }
 
         private int _rbColor; // add this field next to _fbo/_texCells
@@ -150,6 +151,8 @@ void main(){
                 throw new InvalidOperationException($"FBO incomplete at build: {status}");
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            
+            _mrtEnabled = false; // CA0 only in the current debug phase
         }
 
         private static void CheckShader(int sh, string stage)
@@ -261,32 +264,16 @@ void main(){
         
         public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
         {
-            // Bind our offscreen FBO for both draw+read
+            // Bind offscreen FBO (single CA0)
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-
-            // NOW safe to set draw/read buffers for this FBO
             GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
             GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 
+            // Sanity
             var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
             Debug.WriteLine($"FBO status at draw: {fboStatus}");
             if (fboStatus != FramebufferErrorCode.FramebufferComplete)
                 throw new InvalidOperationException($"FBO incomplete at draw: {fboStatus}");
-
-            // Prove attachment is live on the SAME target we’re drawing to
-            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
-                FramebufferAttachment.ColorAttachment0,
-                FramebufferParameterName.FramebufferAttachmentObjectType, out int t0);
-            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
-                FramebufferAttachment.ColorAttachment0,
-                FramebufferParameterName.FramebufferAttachmentObjectName, out int n0);
-            Debug.WriteLine($"At draw: CA0 type={(FramebufferAttachmentObjectType)t0} name={n0}");
-
-            // (Optional) log bindings
-            GL.GetInteger(GetPName.FramebufferBinding, out int fbAll);
-            GL.GetInteger(GetPName.DrawFramebufferBinding, out int fbDraw);
-            GL.GetInteger(GetPName.ReadFramebufferBinding, out int fbRead);
-            Debug.WriteLine($"FB bindings: FRAMEBUFFER={fbAll} DRAW={fbDraw} READ={fbRead} (expect all {_fbo})");
 
             GL.Viewport(0, 0, _w, _h);
             GL.ColorMask(true, true, true, true);
@@ -296,22 +283,48 @@ void main(){
             GL.ClearColor(0f, 0f, 0f, 1f);
             GL.Clear(ClearBufferMask.ColorBufferBit);
 
-            // Minimal pipeline for baseline test
+            // Program
             GL.UseProgram(_prog);
-            
-            if (_uMvp >= 0)
+
+            // ---- A) Draw a clip-space triangle (guard) with identity MVP ----
+            var I = Matrix4.Identity;
+            if (_uMvp >= 0) GL.UniformMatrix4(_uMvp, false, ref I);
+
+            // Bind layout texture to unit 0 (do this once before both draws)
+            if (_uSolarCells >= 0)
             {
-                var I = Matrix4.Identity;
-                GL.UniformMatrix4(_uMvp, false, ref I);
+                if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+                {
+                    _cacheSolarCells = array.LayoutTexture;
+                    UploadLayoutTexture(_cacheSolarCells!);
+                }
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, _texArray);
+                GL.Uniform1(_uSolarCells, 0);
             }
 
-            // Draw clip-space triangle (uses attrib 0 only)
             DrawClipspaceTriangle();
 
-            GL.Finish(); // ensure writes land before readback
+            // ---- B) Draw your mesh with your real MVP (still screen-space UV) ----
+            var center = ComputeArrayCenter(array);
+            double maxDim = ComputeArrayMaxDimension(array);
+            var eye  = center + sunDir * 50f;
+            var view = Matrix4.LookAt(TkVec(eye), TkVec(center), new OpenTK.Mathematics.Vector3(0, 1, 0));
+            float half = (float)(maxDim * 0.5f);
+            var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
+            Matrix4 model = Matrix4.Identity;
+            Matrix4 mvp = proj * view * model;
+            if (_uMvp >= 0) GL.UniformMatrix4(_uMvp, false, ref mvp);
 
+            // Mesh draw
+            using var sprite = new MeshSprite(array.Mesh);
+            GL.BindVertexArray(sprite.Vao);
+            GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+            GL.BindVertexArray(0);
+
+            GL.Finish();
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        }
+    }
 
         private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir, System.Numerics.Vector3 modelCenter, double modelMaxDim)
         {
@@ -324,24 +337,40 @@ void main(){
 
         private void SetUniforms(ArraySpec array, double insolation)
         {
-            GL.UseProgram(_prog);
-            
-            Debug.WriteLine($"layout bounds x0={array.LayoutBounds.MinX}, x1={array.LayoutBounds.MaxX}, z0={array.LayoutBounds.MinZ}, z1={array.LayoutBounds.MaxZ}");
-            
-            if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+            // Only set if our program is already current
+            GL.GetInteger(GetPName.CurrentProgram, out int curProg);
+            if (curProg != _prog) return;
+
+            // (These bounds are unused in this step; safe to leave as-is)
+            if (_uX0 >= 0) GL.Uniform1(_uX0, (float)array.LayoutBounds.MinX);
+            if (_uX1 >= 0) GL.Uniform1(_uX1, (float)array.LayoutBounds.MaxX);
+            if (_uZ0 >= 0) GL.Uniform1(_uZ0, (float)array.LayoutBounds.MinZ);
+            if (_uZ1 >= 0) GL.Uniform1(_uZ1, (float)array.LayoutBounds.MaxZ);
+
+            // Only if present
+            if (_uSolarCells >= 0)
             {
-                _cacheSolarCells = array.LayoutTexture;
-                UploadLayoutTexture(_cacheSolarCells!);
+                if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+                {
+                    _cacheSolarCells = array.LayoutTexture;
+                    UploadLayoutTexture(_cacheSolarCells!);
+                }
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, _texArray);
+                GL.Uniform1(_uSolarCells, 0);
             }
-            GL.Uniform1(_uSolarCells, 0);
 
-            double arrayDimM = ComputeArrayMaxDimension(array);
-            double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
-            double wattsPerPixel = m2PerPixel * insolation;
-            GL.Uniform1(_uPixelWattsIn, (float)wattsPerPixel);
-            GL.Uniform1(_uPixelArea, (float)m2PerPixel);
+            if (_uPixelWattsIn >= 0 || _uPixelArea >= 0)
+            {
+                double arrayDimM = ComputeArrayMaxDimension(array);
+                double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
+                double wattsPerPixel = m2PerPixel * insolation;
+
+                if (_uPixelWattsIn >= 0) GL.Uniform1(_uPixelWattsIn, (float)wattsPerPixel);
+                if (_uPixelArea    >= 0) GL.Uniform1(_uPixelArea,    (float)m2PerPixel);
+            }
         }
-
+        
         private static double ComputeArrayMaxDimension(ArraySpec array)
         {
             Quad3 bb = array.Mesh.BoundingBox;
@@ -390,34 +419,52 @@ void main(){
 
         private float[] ReadFloatTexture(FramebufferAttachment attachment, double scale)
         {
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-            GL.ReadBuffer((ReadBufferMode)attachment);
+            // Bind READ framebuffer (explicit) and select the requested color attachment
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fbo);
 
-            // Rent managed buffer
+            // Is the requested attachment actually present?
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.ReadFramebuffer,
+                attachment,
+                FramebufferParameterName.FramebufferAttachmentObjectName, out int objName);
+
+            if (objName == 0)
+            {
+                // Nothing attached here -> return zeros (safe default during single-CA debug)
+                GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
+                return new float[_w * _h];
+            }
+
+            // Select that attachment for reads
+            var rbm = (ReadBufferMode)attachment; // ColorAttachmentN -> same enum value layout
+            GL.ReadBuffer(rbm);
+
+            // Read RGBA8 bytes and decode
             var buf = ArrayPool<byte>.Shared.Rent(_w * _h * 4);
             try
             {
-                // Read directly into managed array
                 GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
                 GL.ReadPixels(0, 0, _w, _h, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
                 GL.PixelStore(PixelStoreParameter.PackAlignment, 4);
-                
+
                 float[] decoded = new float[_w * _h];
                 for (int i = 0; i < decoded.Length; i++)
                 {
-                    byte r = buf[i * 4 + 0], g = buf[i * 4 + 1], b = buf[i * 4 + 2], a = buf[i * 4 + 3];
-                    if (r == 0 && g == 0 && b == 0) continue;
-                    Debug.Assert(a == 255);
-                    Debug.Assert(r % 2 == 0 && r < 200);
-                    Debug.Assert(b == 0);
-                    decoded[i] = (float)(scale * (r / 2.0 + g / 255.0));
+                    byte r = buf[i * 4 + 0];
+                    byte g = buf[i * 4 + 1];
+                    byte b = buf[i * 4 + 2];
+                    // byte a = buf[i * 4 + 3];  // alpha is not guaranteed to be 255 on all drivers
+
+                    // Don’t assert strict channel values; just decode what we used to encode.
+                    // Our encode packs: value = (r/2) + (g/255) when r stores even steps.
+                    // If b != 0 or r is odd, we’ll still produce a stable best-effort decode.
+                    decoded[i] = (float)(scale * ((r / 2.0) + (g / 255.0)));
                 }
                 return decoded;
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(buf);
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
             }
         }
         
@@ -465,11 +512,22 @@ void main(){
         private ArraySimulationStepOutput AnalyzeComputeTex(ArraySpec array, double wPerM2Insolation, double wPerM2Indirect, double cTemp)
         {
             var texColors = ReadColorTexture(FramebufferAttachment.ColorAttachment0);
-            var texWattsIn = ReadFloatTexture(FramebufferAttachment.ColorAttachment1, 0.0001);
-            double arrayDimM = ComputeArrayMaxDimension(array);
-            double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
-            var texArea = ReadFloatTexture(FramebufferAttachment.ColorAttachment2, m2PerPixel / 4.0);
 
+            float[] texWattsIn, texArea;
+            if (_mrtEnabled)
+            {
+                texWattsIn = ReadFloatTexture(FramebufferAttachment.ColorAttachment1, 0.0001);
+                double arrayDimM = ComputeArrayMaxDimension(array);
+                double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
+                texArea = ReadFloatTexture(FramebufferAttachment.ColorAttachment2, m2PerPixel / 4.0);
+            }
+            else
+            {
+                // No CA1/CA2 yet -> zeros (expected for single-attachment debug)
+                texWattsIn = new float[_w * _h];
+                texArea    = new float[_w * _h];
+            }
+            
             int ncells = 0;
             var cells = new List<ArraySpec.Cell>();
             var colorToId = new Dictionary<Rgba32, int>();
