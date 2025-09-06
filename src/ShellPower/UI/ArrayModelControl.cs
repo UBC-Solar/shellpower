@@ -618,10 +618,10 @@ void main(){
         {
             Debug.Assert(Array != null);
 
-            if (_uX0 >= 0) { GL.Uniform1(_uX0, (float)Array.LayoutBounds.MinX); CheckGLError("uX0"); }
-            if (_uX1 >= 0) { GL.Uniform1(_uX1, (float)Array.LayoutBounds.MaxX); CheckGLError("uX1"); }
-            if (_uZ0 >= 0) { GL.Uniform1(_uZ0, (float)Array.LayoutBounds.MinZ); CheckGLError("uZ0"); }
-            if (_uZ1 >= 0) { GL.Uniform1(_uZ1, (float)Array.LayoutBounds.MaxZ); CheckGLError("uZ1"); }
+            // if (_uX0 >= 0) { GL.Uniform1(_uX0, (float)Array.LayoutBounds.MinX); CheckGLError("uX0"); }
+            // if (_uX1 >= 0) { GL.Uniform1(_uX1, (float)Array.LayoutBounds.MaxX); CheckGLError("uX1"); }
+            // if (_uZ0 >= 0) { GL.Uniform1(_uZ0, (float)Array.LayoutBounds.MinZ); CheckGLError("uZ0"); }
+            // if (_uZ1 >= 0) { GL.Uniform1(_uZ1, (float)Array.LayoutBounds.MaxZ); CheckGLError("uZ1"); }
 
             if (_uSampler >= 0)
             {

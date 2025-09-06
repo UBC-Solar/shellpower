@@ -25,7 +25,7 @@ namespace SSCP.ShellPower
         // GL resources
         private int _vs, _fs, _prog;
         private int _uMvp, _uX0, _uX1, _uZ0, _uZ1, _uPixelWattsIn, _uPixelArea, _uSolarCells;
-
+        
         // Input texture (layout)
         private int _texArray;
         private Image<Rgba32>? _cacheSolarCells;
@@ -59,143 +59,99 @@ namespace SSCP.ShellPower
 
             var vsSrc = @"#version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;
 uniform mat4 uMvp;
-uniform float x0, x1, z0, z1;
-out float vCosRule;
-out float vAreaMult;
-out vec2 vLayoutUV;
 void main(){
-    gl_Position = uMvp * vec4(aPos,1.0);
-    vec3 n = normalize(aNormal);
-    vCosRule = max(n.z, 0.0);
-    float lenN = length(n);
-    vAreaMult = clamp(lenN / max(n.z, 1e-6), 0.0, 24.0);
-
-    float dx = max(x1 - x0, 1e-6);
-    float dz = max(z1 - z0, 1e-6);
-    vec2 uv = vec2((aPos.x - x0) / dx, (aPos.z - z0) / dz);
-    vLayoutUV = clamp(uv, 0.0, 1.0);
-
+    gl_Position = uMvp * vec4(aPos, 1.0);
 }";
 
             var fsSrc = @"#version 330 core
-in float vCosRule;
-in float vAreaMult;
-in vec2 vLayoutUV;
-uniform float pixelWattsIn;
-uniform float pixelArea;
-uniform sampler2D solarCells;
 layout(location=0) out vec4 oCells;
-layout(location=1) out vec4 oWatts;
-layout(location=2) out vec4 oArea;
-vec4 encodeFloat(float val){
-    float mwRed = floor(val) * 2.0 / 255.0;
-    float mwGreen = val - floor(val);
-    return vec4(mwRed, mwGreen, 0.0, 1.0);
-}
 void main(){
-    vec4 solarCell = texture(solarCells, vLayoutUV);
-    float watts10k = pixelWattsIn * vCosRule * 10000.0;
-    oCells = vec4(solarCell.rgb, 1.0);
-    oWatts = encodeFloat(watts10k);
-    oArea  = encodeFloat(vAreaMult * 4.0);
-
-    //oCells = texture(solarCells, vec2(0.5, 0.5));
-    //oWatts = vec4(0,0,0,1);
-    //oArea  = vec4(0,0,0,1);
-    oCells = texture(solarCells, vec2(0.5, 0.5));
-    oWatts = vec4(0,0,0,1);
-    oArea  = vec4(0,0,0,1);
+    oCells = vec4(1.0, 0.0, 1.0, 1.0); // MAGENTA
 }";
+
 
             GL.ShaderSource(_vs, vsSrc);
             GL.CompileShader(_vs);
             var vsLog = ShaderLog(_vs);
-            if (!string.IsNullOrWhiteSpace(vsLog)) throw new InvalidOperationException("Vertex shader compile failed:\n" + vsLog);
+            if (!string.IsNullOrWhiteSpace(vsLog))
+                throw new InvalidOperationException("Vertex shader compile failed:\n" + vsLog);
 
             GL.ShaderSource(_fs, fsSrc);
             GL.CompileShader(_fs);
             var fsLog = ShaderLog(_fs);
-            if (!string.IsNullOrWhiteSpace(fsLog)) throw new InvalidOperationException("Fragment shader compile failed:\n" + fsLog);
+            if (!string.IsNullOrWhiteSpace(fsLog))
+                throw new InvalidOperationException("Fragment shader compile failed:\n" + fsLog);
 
             _prog = GL.CreateProgram();
             GL.AttachShader(_prog, _vs);
             GL.AttachShader(_prog, _fs);
             GL.LinkProgram(_prog);
             var linkLog = ProgramLog(_prog);
-            if (!string.IsNullOrWhiteSpace(linkLog)) throw new InvalidOperationException("Program link failed:\n" + linkLog);
-
+            if (!string.IsNullOrWhiteSpace(linkLog))
+                throw new InvalidOperationException("Program link failed:\n" + linkLog);
+            
             _uMvp = GL.GetUniformLocation(_prog, "uMvp");
-            _uX0 = GL.GetUniformLocation(_prog, "x0");
-            _uX1 = GL.GetUniformLocation(_prog, "x1");
-            _uZ0 = GL.GetUniformLocation(_prog, "z0");
-            _uZ1 = GL.GetUniformLocation(_prog, "z1");
-            _uPixelWattsIn = GL.GetUniformLocation(_prog, "pixelWattsIn");
-            _uPixelArea = GL.GetUniformLocation(_prog, "pixelArea");
-            _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
+            
+            // _uX0 = GL.GetUniformLocation(_prog, "x0");
+            // _uX1 = GL.GetUniformLocation(_prog, "x1");
+            // _uZ0 = GL.GetUniformLocation(_prog, "z0");
+            // _uZ1 = GL.GetUniformLocation(_prog, "z1");
+            // _uPixelWattsIn = GL.GetUniformLocation(_prog, "pixelWattsIn");
+            // _uPixelArea = GL.GetUniformLocation(_prog, "pixelArea");
+            // _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
         }
+
+        private int _rbColor; // add this field next to _fbo/_texCells
 
         private void InitOutputBuffers()
         {
             _w = _h = COMPUTE_TEX_SIZE;
 
-            // --- Cells texture (RGBA8) ---
+            // Cleanup if reinit
+            if (_fbo != 0) GL.DeleteFramebuffer(_fbo);
+            if (_texCells != 0) GL.DeleteTexture(_texCells);
+
+            // Color texture
             _texCells = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _texCells);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                          _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-            SetTexParams(_texCells);
-
-            // --- Watts texture (RGBA8; matches 8-bit channel encode) ---
-            _texWatts = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, _texWatts);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-            SetTexParams(_texWatts);
-
-            // --- Area texture (RGBA8) ---
-            _texArea = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, _texArea);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                _w, _h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-            SetTexParams(_texArea);
-            // --- Depth texture (DEPTH24) ---
-            _texDepth = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, _texDepth);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent24,
-                          _w, _h, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, _w, _h, 0,
+                          PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
-            // --- Framebuffer setup ---
+            // FBO
             _fbo = GL.GenFramebuffer();
+
+            // IMPORTANT: bind as FRAMEBUFFER (affects draw+read), then attach and set both draw & read buffers
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
 
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _texCells, 0);
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _texWatts, 0);
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment2, TextureTarget.Texture2D, _texArea, 0);
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _texDepth, 0);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _texCells, 0);
 
-            // Specify we will draw to all three color attachments
-            DrawBuffersEnum[] bufs = {
-                DrawBuffersEnum.ColorAttachment0,
-                DrawBuffersEnum.ColorAttachment1,
-                DrawBuffersEnum.ColorAttachment2
-            };
-            GL.DrawBuffers(bufs.Length, bufs);
+            // Select only COLOR_ATTACHMENT0 for both DRAW and READ
+            GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 
-            // Check status
+            // Verify attachment on the SAME target you bound
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                FramebufferParameterName.FramebufferAttachmentObjectType, out int objType);
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                FramebufferParameterName.FramebufferAttachmentObjectName, out int objName);
+            Debug.WriteLine($"FBO attach0 type={(FramebufferAttachmentObjectType)objType} name={objName} (expect Texture, nonzero)");
+
             var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+            Debug.WriteLine($"FBO status after build: {status}");
             if (status != FramebufferErrorCode.FramebufferComplete)
-                throw new InvalidOperationException($"FBO incomplete: {status}");
+                throw new InvalidOperationException($"FBO incomplete at build: {status}");
 
-            // Unbind to avoid accidental rendering
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         }
-        
+
         private static void CheckShader(int sh, string stage)
         {
             GL.GetShader(sh, ShaderParameter.CompileStatus, out int ok);
@@ -273,115 +229,90 @@ void main(){
             return output;
         }
         
-public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
-{
-    GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        private (int vao, int vbo) _clipTri;
+        private void DrawClipspaceTriangle()
+        {
+            if (_clipTri.vao == 0)
+            {
+                // 3 vertices in clip/NDC space (x,y,z), normals unused
+                float[] verts = {
+                    // pos only; VS will ignore normal
+                    -0.5f, -0.5f, 0.0f,
+                    0.5f, -0.5f, 0.0f,
+                    0.0f,  0.5f, 0.0f
+                };
+                int vao = GL.GenVertexArray();
+                int vbo = GL.GenBuffer();
+                GL.BindVertexArray(vao);
+                GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+                GL.BufferData(BufferTarget.ArrayBuffer, verts.Length * sizeof(float), verts, BufferUsageHint.StaticDraw);
 
-    var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-    if (fboStatus != FramebufferErrorCode.FramebufferComplete)
-        throw new InvalidOperationException($"FBO incomplete: {fboStatus}");
+                GL.EnableVertexAttribArray(0); // position @ location 0
+                GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
+                // we won’t supply attrib 1 (normal) for this test; VS will synthesize one
 
-    GL.Viewport(0, 0, _w, _h);
-    GL.DrawBuffers(3, new[]
-    {
-        DrawBuffersEnum.ColorAttachment0,
-        DrawBuffersEnum.ColorAttachment1,
-        DrawBuffersEnum.ColorAttachment2
-    });
+                _clipTri = (vao, vbo);
+            }
 
-    GL.ClearColor(0f, 0f, 0f, 1f);
-    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            GL.BindVertexArray(_clipTri.vao);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+            GL.BindVertexArray(0);
+        }
+        
+        public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
+        {
+            // Bind our offscreen FBO for both draw+read
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
 
-    // Disable rejects for now
-    GL.Disable(EnableCap.CullFace);
-    GL.Disable(EnableCap.DepthTest);
+            // NOW safe to set draw/read buffers for this FBO
+            GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 
-    // ---- BIND PROGRAM FIRST ----
-    GL.UseProgram(_prog);
+            var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+            Debug.WriteLine($"FBO status at draw: {fboStatus}");
+            if (fboStatus != FramebufferErrorCode.FramebufferComplete)
+                throw new InvalidOperationException($"FBO incomplete at draw: {fboStatus}");
 
-    // Now it’s safe to query/assert the current program
-    GL.GetInteger(GetPName.CurrentProgram, out int curProg);
-    Debug.Assert(curProg == _prog, $"Wrong program bound: {curProg} vs expected {_prog}");
-    Debug.Assert(_uSolarCells >= 0, "uSolarCells location is -1");
+            // Prove attachment is live on the SAME target we’re drawing to
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                FramebufferParameterName.FramebufferAttachmentObjectType, out int t0);
+            GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                FramebufferParameterName.FramebufferAttachmentObjectName, out int n0);
+            Debug.WriteLine($"At draw: CA0 type={(FramebufferAttachmentObjectType)t0} name={n0}");
 
-    // Build MVP = proj * view * model
-    var center = ComputeArrayCenter(array);
-    double maxDim = ComputeArrayMaxDimension(array);
-    var eye  = center + sunDir * 50f;
-    var view = Matrix4.LookAt(TkVec(eye), TkVec(center), new OpenTK.Mathematics.Vector3(0, 1, 0));
-    float half = (float)(maxDim * 0.5);
-    var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
-    Matrix4 model = Matrix4.Identity;
-    Matrix4 mvp = proj * view * model;
-    GL.UniformMatrix4(_uMvp, false, ref mvp);
+            // (Optional) log bindings
+            GL.GetInteger(GetPName.FramebufferBinding, out int fbAll);
+            GL.GetInteger(GetPName.DrawFramebufferBinding, out int fbDraw);
+            GL.GetInteger(GetPName.ReadFramebufferBinding, out int fbRead);
+            Debug.WriteLine($"FB bindings: FRAMEBUFFER={fbAll} DRAW={fbDraw} READ={fbRead} (expect all {_fbo})");
 
-    // Bind layout texture to unit 0 and set the sampler to 0 (after UseProgram!)
-    GL.ActiveTexture(TextureUnit.Texture0);
-    GL.BindTexture(TextureTarget.Texture2D, _texArray);
-    GL.Uniform1(_uSolarCells, 0);
+            GL.Viewport(0, 0, _w, _h);
+            GL.ColorMask(true, true, true, true);
+            GL.Disable(EnableCap.ScissorTest);
+            GL.Disable(EnableCap.CullFace);
+            GL.Disable(EnableCap.DepthTest);
+            GL.ClearColor(0f, 0f, 0f, 1f);
+            GL.Clear(ClearBufferMask.ColorBufferBit);
 
-    // Optional: log sampler value (safe now the program is bound)
-    // int[] samplerVal = new int[1];
-    // GL.GetUniform(_prog, _uSolarCells, samplerVal);
-    // Debug.WriteLine($"uSolarCells={samplerVal[0]} (expect 0)");
+            // Minimal pipeline for baseline test
+            GL.UseProgram(_prog);
+            
+            if (_uMvp >= 0)
+            {
+                var I = Matrix4.Identity;
+                GL.UniformMatrix4(_uMvp, false, ref I);
+            }
 
-    // Draw with VAO-only path (no program changes inside)
-    using var sprite = new MeshSprite(array.Mesh);
-    GL.BindVertexArray(sprite.Vao);
+            // Draw clip-space triangle (uses attrib 0 only)
+            DrawClipspaceTriangle();
 
-    // Quick geometry sanity
-    GL.GetInteger(GetPName.ElementArrayBufferBinding, out int ebo);
-    Debug.Assert(ebo != 0, "No EBO bound in VAO");
-    Debug.Assert(sprite.IndexCount > 0, "IndexCount == 0");
+            GL.Finish(); // ensure writes land before readback
 
-    GL.GetInteger(GetPName.CurrentProgram, out curProg);
-    GL.GetInteger(GetPName.FramebufferBinding, out int curFbo);
-    GL.GetInteger(GetPName.DrawFramebufferBinding, out int curDrawFbo);
-    GL.GetInteger(GetPName.ReadFramebufferBinding, out int curReadFbo);
-    GL.GetInteger(GetPName.ActiveTexture, out int activeTex); // should be Texture0 + 0
-    int[] samplerVal = new int[1];
-    GL.GetUniform(_prog, _uSolarCells, samplerVal);
-    Debug.WriteLine($"prog={curProg} fbo={curFbo}/{curDrawFbo}/{curReadFbo} activeTex={activeTex} sampler={samplerVal[0]}");
-    
-    GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
-    GL.BindVertexArray(0);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        }
 
-    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-}
-        // public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
-        // {
-        //     // bind your MRT FBO & state
-        //     GL.UseProgram(_prog);
-        //     GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-        //     GL.DrawBuffers(3, new[] {
-        //         DrawBuffersEnum.ColorAttachment0,
-        //         DrawBuffersEnum.ColorAttachment1,
-        //         DrawBuffersEnum.ColorAttachment2
-        //     });
-        //     GL.Viewport(0, 0, _w, _h);
-        //     GL.ClearColor(0f, 0f, 0f, 1f);
-        //     GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        //
-        //     // build and upload MVP
-        //     var center = ComputeArrayCenter(array);
-        //     double maxDim = ComputeArrayMaxDimension(array);
-        //     Matrix4 mvp = BuildSunPOVMvp(sunDir, center, maxDim, Matrix4.Identity);
-        //     GL.UniformMatrix4(_uMvp, false, ref mvp);
-        //
-        //     // textures/samplers
-        //     GL.ActiveTexture(TextureUnit.Texture0);
-        //     GL.BindTexture(TextureTarget.Texture2D, _texArray);
-        //     GL.Uniform1(_uSolarCells, 0);
-        //
-        //     // draw with YOUR program (bind VAO directly)
-        //     var sprite = new MeshSprite(array.Mesh);   // assumes this builds/owns a VAO
-        //     GL.BindVertexArray(sprite.Vao);            // attrib 0 = pos, 1 = normal
-        //     GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
-        //     GL.BindVertexArray(0);
-        //
-        //     GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        // }
-        //
         private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir, System.Numerics.Vector3 modelCenter, double modelMaxDim)
         {
             var eye = modelCenter + sunDir * 50f;
@@ -394,10 +325,6 @@ public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
         private void SetUniforms(ArraySpec array, double insolation)
         {
             GL.UseProgram(_prog);
-            GL.Uniform1(_uX0, (float)array.LayoutBounds.MinX);
-            GL.Uniform1(_uX1, (float)array.LayoutBounds.MaxX);
-            GL.Uniform1(_uZ0, (float)array.LayoutBounds.MinZ);
-            GL.Uniform1(_uZ1, (float)array.LayoutBounds.MaxZ);
             
             Debug.WriteLine($"layout bounds x0={array.LayoutBounds.MinX}, x1={array.LayoutBounds.MaxX}, z0={array.LayoutBounds.MinZ}, z1={array.LayoutBounds.MaxZ}");
             
@@ -459,25 +386,6 @@ public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
             SetTexParamsBound(TextureTarget.Texture2D);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBaseLevel, 0);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0);
-            //
-            // // Read back a small sample from GPU to confirm non-zero data arrived
-            // var back = new byte[Math.Min(64, img.Width) * Math.Min(64, img.Height) * 4];
-            // GL.GetTexImage(TextureTarget.Texture2D, 0, PixelFormat.Rgba, PixelType.UnsignedByte, back);
-            //
-            // bool gpuHasNonBlack = false;
-            // for (int i = 0; i < back.Length; i += 4)
-            // {
-            //     if (back[i+0] != 0 || back[i+1] != 0 || back[i+2] != 0) { gpuHasNonBlack = true; break; }
-            // }
-            // Debug.WriteLine($"layout GPU sample hasNonBlack={gpuHasNonBlack}");
-            //
-            // GL.BindTexture(TextureTarget.Texture2D, 0);
-            //
-            // int tw=0, th=0;
-            // GL.BindTexture(TextureTarget.Texture2D, _texArray);
-            // GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureWidth, out tw);
-            // GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureHeight, out th);
-            // Debug.WriteLine($"layout tex size = {tw}x{th}");
         }
 
         private float[] ReadFloatTexture(FramebufferAttachment attachment, double scale)
@@ -526,30 +434,29 @@ public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
             // GLSL multiplies column-major with vectors on the right ⇒ proj * view * model
             return proj * view * model;
         }
-
+        
+        [Conditional("DEBUG")]
+        private static void CheckGLErr(string where)
+        {
+            var err = GL.GetError();
+            if (err != ErrorCode.NoError) Debug.WriteLine($"{where}: GL ERROR = {err}");
+        }
 
         private Rgba32[] ReadColorTexture(FramebufferAttachment attachment)
         {
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-            GL.ReadBuffer((ReadBufferMode)attachment);
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fbo);
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 
             var raw = new byte[_w * _h * 4];
-            // Read directly into managed array
             GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
             GL.ReadPixels(0, 0, _w, _h, PixelFormat.Rgba, PixelType.UnsignedByte, raw);
             GL.PixelStore(PixelStoreParameter.PackAlignment, 4);
 
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
 
             var colors = new Rgba32[_w * _h];
             for (int i = 0; i < colors.Length; i++)
-            {
-                colors[i] = new Rgba32(
-                    raw[i * 4 + 0],
-                    raw[i * 4 + 1],
-                    raw[i * 4 + 2],
-                    raw[i * 4 + 3]);
-            }
+                colors[i] = new Rgba32(raw[i*4+0], raw[i*4+1], raw[i*4+2], raw[i*4+3]);
             return colors;
         }
         
@@ -726,6 +633,12 @@ public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
             if (_glLoaded) return;
             // Wire OpenTK’s GL loader to Avalonia’s context
             OpenTK.Graphics.OpenGL.GL.LoadBindings(new OpenTKBindingsContext(gl));
+            
+            string glVer = GL.GetString(StringName.Version);
+            string glslVer = GL.GetString(StringName.ShadingLanguageVersion);
+            GL.GetInteger(GetPName.MaxColorAttachments, out int maxCA);
+            GL.GetInteger(GetPName.MaxDrawBuffers, out int maxDB);
+            Debug.WriteLine($"GL={glVer} GLSL={glslVer} MaxColorAttachments={maxCA} MaxDrawBuffers={maxDB}");
 
             // Basic state you want once
             GL.Disable(EnableCap.Blend);
@@ -765,6 +678,15 @@ public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
                     // nothing queued; clear default FB for Avalonia’s sake
                     GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
                     GL.Viewport(0, 0, (int)Bounds.Width, (int)Bounds.Height);
+                    
+                    GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
+                        FramebufferAttachment.ColorAttachment0,
+                        FramebufferParameterName.FramebufferAttachmentObjectType, out int t0);
+                    GL.GetFramebufferAttachmentParameter(FramebufferTarget.DrawFramebuffer,
+                        FramebufferAttachment.ColorAttachment0,
+                        FramebufferParameterName.FramebufferAttachmentObjectName, out int n0);
+                    Debug.WriteLine($"At draw: CA0 type={(FramebufferAttachmentObjectType)t0} name={n0}");
+                    
                     GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
                 }
             }
