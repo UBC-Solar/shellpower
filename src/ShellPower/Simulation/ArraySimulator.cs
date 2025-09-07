@@ -24,7 +24,7 @@ namespace SSCP.ShellPower
 
         // GL resources
         private int _vs, _fs, _prog;
-        private int _uMvp, _uX0, _uX1, _uZ0, _uZ1, _uPixelWattsIn, _uPixelArea, _uSolarCells;
+        private int _uMvp, _uX0, _uX1, _uZ0, _uZ1, _uPixelWattsIn, _uPixelArea, _uSolarCells, _uY0, _uY1, _uSolid;
         private bool _mrtEnabled = false; // set to true when you actually attach CA1/CA2
         
         // Input texture (layout)
@@ -60,55 +60,190 @@ namespace SSCP.ShellPower
             _glInit = true;
         }
 
-        private void InitProgram()
-        {
-            _vs = GL.CreateShader(ShaderType.VertexShader);
-            _fs = GL.CreateShader(ShaderType.FragmentShader);
+private void InitProgram()
+{
+    _vs = GL.CreateShader(ShaderType.VertexShader);
+    _fs = GL.CreateShader(ShaderType.FragmentShader);
 
-// VS: screen-space UVs from clip coords (no bounds)
-            var vsSrc = @"#version 330 core
+// --- Vertex shader: UV from mesh X/Y bounds
+    var vsSrc = @"
+#version 330 core
 layout(location=0) in vec3 aPos;
-uniform mat4 uMvp;
+
+// Use X/Z bounds for top-down
+uniform float x0, x1;
+uniform float z0, z1;
+
 out vec2 vLayoutUV;
+
 void main(){
-    vec4 clip = uMvp * vec4(aPos, 1.0);
-    gl_Position = clip;
-    // NDC [-1,1] -> UV [0,1]
-    float iw = 1.0 / max(clip.w, 1e-6);
-    vLayoutUV = clip.xy * iw * 0.5 + 0.5;
+    // UV from X/Z
+    float dx = max(x1 - x0, 1e-6);
+    float dz = max(z1 - z0, 1e-6);
+    vec2 uv = vec2( (aPos.x - x0) / dx,
+                    (aPos.z - z0) / dz );
+    vLayoutUV = clamp(uv, 0.0, 1.0);
+
+    // Place directly in NDC using the same UV (no MVP)
+    vec2 ndc = vLayoutUV * 2.0 - 1.0;   // [0,1] -> [-1,1]
+    gl_Position = vec4(ndc, 0.0, 1.0);
 }";
 
-            var fsSrc = @"#version 330 core
+// --- Fragment shader: sample the layout (or solid for debug)
+    var fsSrc = @"
+#version 330 core
 in vec2 vLayoutUV;
 uniform sampler2D solarCells;
+uniform int uSolid;       // 1 = solid magenta, 0 = sample texture
 layout(location=0) out vec4 oCells;
 void main(){
-    oCells = texture(solarCells, vLayoutUV);
+    if (uSolid == 1) {
+        oCells = vec4(1.0, 0.0, 1.0, 1.0);
+    } else {
+        oCells = texture(solarCells, vLayoutUV);
+    }
 }";
 
-            GL.ShaderSource(_vs, vsSrc);
-            GL.CompileShader(_vs);
-            var vsLog = ShaderLog(_vs);
-            if (!string.IsNullOrWhiteSpace(vsLog))
-                throw new InvalidOperationException("Vertex shader compile failed:\n" + vsLog);
+    GL.ShaderSource(_vs, vsSrc);
+    GL.CompileShader(_vs);
+    var vsLog = ShaderLog(_vs);
+    if (!string.IsNullOrWhiteSpace(vsLog))
+        throw new InvalidOperationException("Vertex shader compile failed:\n" + vsLog);
 
-            GL.ShaderSource(_fs, fsSrc);
-            GL.CompileShader(_fs);
-            var fsLog = ShaderLog(_fs);
-            if (!string.IsNullOrWhiteSpace(fsLog))
-                throw new InvalidOperationException("Fragment shader compile failed:\n" + fsLog);
+    GL.ShaderSource(_fs, fsSrc);
+    GL.CompileShader(_fs);
+    var fsLog = ShaderLog(_fs);
+    if (!string.IsNullOrWhiteSpace(fsLog))
+        throw new InvalidOperationException("Fragment shader compile failed:\n" + fsLog);
 
-            _prog = GL.CreateProgram();
-            GL.AttachShader(_prog, _vs);
-            GL.AttachShader(_prog, _fs);
-            GL.LinkProgram(_prog);
-            var linkLog = ProgramLog(_prog);
-            if (!string.IsNullOrWhiteSpace(linkLog))
-                throw new InvalidOperationException("Program link failed:\n" + linkLog);
-            
-            _uMvp        = GL.GetUniformLocation(_prog, "uMvp");
-            _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
+    _prog = GL.CreateProgram();
+    GL.AttachShader(_prog, _vs);
+    GL.AttachShader(_prog, _fs);
+    GL.LinkProgram(_prog);
+    var linkLog = ProgramLog(_prog);
+    if (!string.IsNullOrWhiteSpace(linkLog))
+        throw new InvalidOperationException("Program link failed:\n" + linkLog);
+
+    _uMvp        = GL.GetUniformLocation(_prog, "uMvp");
+    _uSolarCells = GL.GetUniformLocation(_prog, "solarCells");
+    _uX0         = GL.GetUniformLocation(_prog, "x0");
+    _uX1         = GL.GetUniformLocation(_prog, "x1");
+    _uY0         = GL.GetUniformLocation(_prog, "y0");
+    _uY1         = GL.GetUniformLocation(_prog, "y1");
+    _uZ0         = GL.GetUniformLocation(_prog, "z0");
+    _uZ1         = GL.GetUniformLocation(_prog, "z1");
+    _uSolid      = GL.GetUniformLocation(_prog, "uSolid");
+    
+    // (keep these disabled for now)
+    _uPixelWattsIn = -1;
+    _uPixelArea    = -1;
+    
+}
+
+public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
+{
+    // Bind offscreen FBO (single CA0)
+    GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+    GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
+    GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
+
+    // Sanity
+    var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+    Debug.WriteLine($"FBO status at draw: {fboStatus}");
+    if (fboStatus != FramebufferErrorCode.FramebufferComplete)
+        throw new InvalidOperationException($"FBO incomplete at draw: {fboStatus}");
+
+    GL.Viewport(0, 0, _w, _h);
+    GL.ColorMask(true, true, true, true);
+    GL.Disable(EnableCap.ScissorTest);
+    GL.Disable(EnableCap.CullFace);
+    GL.Disable(EnableCap.DepthTest);
+    GL.ClearColor(0f, 0f, 0f, 1f);
+    GL.Clear(ClearBufferMask.ColorBufferBit);
+
+    // ---- Bind program (NOW uniforms are legal) ----
+    GL.UseProgram(_prog);
+
+    // Make sure layout texture is on unit 0 and sampler points to 0
+    if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+    {
+        _cacheSolarCells = array.LayoutTexture;
+        UploadLayoutTexture(_cacheSolarCells!);
+    }
+    GL.ActiveTexture(TextureUnit.Texture0);
+    GL.BindTexture(TextureTarget.Texture2D, _texArray);
+    if (_uSolarCells >= 0) GL.Uniform1(_uSolarCells, 0);
+    
+// ---- Bind program (NOW uniforms are legal) ----
+    GL.UseProgram(_prog);
+
+// Bind layout texture on unit 0 (even if we draw solid first)
+    if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+    {
+        _cacheSolarCells = array.LayoutTexture;
+        UploadLayoutTexture(_cacheSolarCells!);
+    }
+    GL.ActiveTexture(TextureUnit.Texture0);
+    GL.BindTexture(TextureTarget.Texture2D, _texArray);
+    if (_uSolarCells >= 0) GL.Uniform1(_uSolarCells, 0);
+
+// Upload X/Y bounds (these drive both UVs and NDC placement)
+    var bb = array.Mesh.BoundingBox;
+    if (_uX0 >= 0) GL.Uniform1(_uX0, (float)bb.Min.X);
+    if (_uX1 >= 0) GL.Uniform1(_uX1, (float)bb.Max.X);
+    if (_uZ0 >= 0) GL.Uniform1(_uZ0, (float)bb.Min.Z);
+    if (_uZ1 >= 0) GL.Uniform1(_uZ1, (float)bb.Max.Z);
+
+// ---- Draw mesh once, solid, to prove visibility ----
+    using var sprite = new MeshSprite(array.Mesh);
+    GL.BindVertexArray(sprite.Vao);
+    if (_uSolid >= 0) GL.Uniform1(_uSolid, 1);   // 1 = solid magenta
+    GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+
+// (Optional) immediately overwrite with textured version
+    if (_uSolid >= 0) GL.Uniform1(_uSolid, 0);   // 0 = sample layout
+    GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+    GL.BindVertexArray(0);
+    
+    GL.Finish();
+    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+}
+
+private void SetUniforms(ArraySpec array, double insolation)
+{
+    // Only set if our program is already current
+    GL.GetInteger(GetPName.CurrentProgram, out int curProg);
+    if (curProg != _prog) return;
+
+    // (These bounds are unused in this step; safe to leave as-is)
+    if (_uX0 >= 0) GL.Uniform1(_uX0, (float)array.LayoutBounds.MinX);
+    if (_uX1 >= 0) GL.Uniform1(_uX1, (float)array.LayoutBounds.MaxX);
+    if (_uZ0 >= 0) GL.Uniform1(_uZ0, (float)array.LayoutBounds.MinZ);
+    if (_uZ1 >= 0) GL.Uniform1(_uZ1, (float)array.LayoutBounds.MaxZ);
+
+    // Only if present
+    if (_uSolarCells >= 0)
+    {
+        if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
+        {
+            _cacheSolarCells = array.LayoutTexture;
+            UploadLayoutTexture(_cacheSolarCells!);
         }
+        GL.ActiveTexture(TextureUnit.Texture0);
+        GL.BindTexture(TextureTarget.Texture2D, _texArray);
+        GL.Uniform1(_uSolarCells, 0);
+    }
+
+    if (_uPixelWattsIn >= 0 || _uPixelArea >= 0)
+    {
+        double arrayDimM = ComputeArrayMaxDimension(array);
+        double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
+        double wattsPerPixel = m2PerPixel * insolation;
+
+        if (_uPixelWattsIn >= 0) GL.Uniform1(_uPixelWattsIn, (float)wattsPerPixel);
+        if (_uPixelArea    >= 0) GL.Uniform1(_uPixelArea,    (float)m2PerPixel);
+    }
+}
 
         private int _rbColor; // add this field next to _fbo/_texCells
 
@@ -219,6 +354,17 @@ void main(){
             var sunDir = GetSunDir(simInput);
             return Simulate(simInput.Array!, sunDir, simInput.Irradiance, simInput.IndirectIrradiance, simInput.Temperature);
         }
+        
+        private static OpenTK.Mathematics.Vector4 Mul(OpenTK.Mathematics.Matrix4 m, OpenTK.Mathematics.Vector4 v)
+        {
+            // Treat v as a column vector and compute m * v
+            return new OpenTK.Mathematics.Vector4(
+                m.M11 * v.X + m.M12 * v.Y + m.M13 * v.Z + m.M14 * v.W,
+                m.M21 * v.X + m.M22 * v.Y + m.M23 * v.Z + m.M24 * v.W,
+                m.M31 * v.X + m.M32 * v.Y + m.M33 * v.Z + m.M34 * v.W,
+                m.M41 * v.X + m.M42 * v.Y + m.M43 * v.Z + m.M44 * v.W
+            );
+        }
 
         public ArraySimulationStepOutput Simulate(ArraySpec array, System.Numerics.Vector3 sunDir, double wPerM2Insolation, double wPerM2Indirect, double cTemp)
         {
@@ -269,70 +415,6 @@ void main(){
             GL.BindVertexArray(0);
         }
         
-        public void ComputeRender(ArraySpec array, System.Numerics.Vector3 sunDir)
-        {
-            // Bind offscreen FBO (single CA0)
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-            GL.DrawBuffers(1, new[] { DrawBuffersEnum.ColorAttachment0 });
-            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
-
-            // Sanity
-            var fboStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-            Debug.WriteLine($"FBO status at draw: {fboStatus}");
-            if (fboStatus != FramebufferErrorCode.FramebufferComplete)
-                throw new InvalidOperationException($"FBO incomplete at draw: {fboStatus}");
-
-            GL.Viewport(0, 0, _w, _h);
-            GL.ColorMask(true, true, true, true);
-            GL.Disable(EnableCap.ScissorTest);
-            GL.Disable(EnableCap.CullFace);
-            GL.Disable(EnableCap.DepthTest);
-            GL.ClearColor(0f, 0f, 0f, 1f);
-            GL.Clear(ClearBufferMask.ColorBufferBit);
-
-            // Program
-            GL.UseProgram(_prog);
-
-            // ---- A) Draw a clip-space triangle (guard) with identity MVP ----
-            var I = Matrix4.Identity;
-            if (_uMvp >= 0) GL.UniformMatrix4(_uMvp, false, ref I);
-
-            // Bind layout texture to unit 0 (do this once before both draws)
-            if (_uSolarCells >= 0)
-            {
-                if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
-                {
-                    _cacheSolarCells = array.LayoutTexture;
-                    UploadLayoutTexture(_cacheSolarCells!);
-                }
-                GL.ActiveTexture(TextureUnit.Texture0);
-                GL.BindTexture(TextureTarget.Texture2D, _texArray);
-                GL.Uniform1(_uSolarCells, 0);
-            }
-
-            DrawClipspaceTriangle();
-
-            // ---- B) Draw your mesh with your real MVP (still screen-space UV) ----
-            var center = ComputeArrayCenter(array);
-            double maxDim = ComputeArrayMaxDimension(array);
-            var eye  = center + sunDir * 50f;
-            var view = Matrix4.LookAt(TkVec(eye), TkVec(center), new OpenTK.Mathematics.Vector3(0, 1, 0));
-            float half = (float)(maxDim * 0.5f);
-            var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
-            Matrix4 model = Matrix4.Identity;
-            Matrix4 mvp = proj * view * model;
-            if (_uMvp >= 0) GL.UniformMatrix4(_uMvp, false, ref mvp);
-
-            // Mesh draw
-            using var sprite = new MeshSprite(array.Mesh);
-            GL.BindVertexArray(sprite.Vao);
-            GL.DrawElements(PrimitiveType.Triangles, sprite.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
-            GL.BindVertexArray(0);
-
-            GL.Finish();
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-    }
-
         private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir, System.Numerics.Vector3 modelCenter, double modelMaxDim)
         {
             var eye = modelCenter + sunDir * 50f;
@@ -340,42 +422,6 @@ void main(){
             float half = (float)(modelMaxDim * 0.5);
             var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
             return view * proj;
-        }
-
-        private void SetUniforms(ArraySpec array, double insolation)
-        {
-            // Only set if our program is already current
-            GL.GetInteger(GetPName.CurrentProgram, out int curProg);
-            if (curProg != _prog) return;
-
-            // (These bounds are unused in this step; safe to leave as-is)
-            if (_uX0 >= 0) GL.Uniform1(_uX0, (float)array.LayoutBounds.MinX);
-            if (_uX1 >= 0) GL.Uniform1(_uX1, (float)array.LayoutBounds.MaxX);
-            if (_uZ0 >= 0) GL.Uniform1(_uZ0, (float)array.LayoutBounds.MinZ);
-            if (_uZ1 >= 0) GL.Uniform1(_uZ1, (float)array.LayoutBounds.MaxZ);
-
-            // Only if present
-            if (_uSolarCells >= 0)
-            {
-                if (!ReferenceEquals(_cacheSolarCells, array.LayoutTexture))
-                {
-                    _cacheSolarCells = array.LayoutTexture;
-                    UploadLayoutTexture(_cacheSolarCells!);
-                }
-                GL.ActiveTexture(TextureUnit.Texture0);
-                GL.BindTexture(TextureTarget.Texture2D, _texArray);
-                GL.Uniform1(_uSolarCells, 0);
-            }
-
-            if (_uPixelWattsIn >= 0 || _uPixelArea >= 0)
-            {
-                double arrayDimM = ComputeArrayMaxDimension(array);
-                double m2PerPixel = arrayDimM * arrayDimM / (double)(COMPUTE_TEX_SIZE * COMPUTE_TEX_SIZE);
-                double wattsPerPixel = m2PerPixel * insolation;
-
-                if (_uPixelWattsIn >= 0) GL.Uniform1(_uPixelWattsIn, (float)wattsPerPixel);
-                if (_uPixelArea    >= 0) GL.Uniform1(_uPixelArea,    (float)m2PerPixel);
-            }
         }
         
         private static double ComputeArrayMaxDimension(ArraySpec array)
@@ -388,6 +434,34 @@ void main(){
         {
             Quad3 bb = array.Mesh.BoundingBox;
             return System.Numerics.Vector3.Multiply((bb.Max + bb.Min), 0.5f);
+        }
+        
+        [Conditional("DEBUG")]
+        private static void LogMeshNdcBounds(Matrix4 mvp, Mesh mesh)
+        {
+            var min = new OpenTK.Mathematics.Vector2(float.PositiveInfinity, float.PositiveInfinity);
+            var max = new OpenTK.Mathematics.Vector2(float.NegativeInfinity, float.NegativeInfinity);
+            int inside = 0, total = mesh.points.Length;
+
+            for (int i = 0; i < total; i++)
+            {
+                var p = mesh.points[i];
+                var v = new OpenTK.Mathematics.Vector4(p.X, p.Y, p.Z, 1f);
+                var clip = OpenTK.Mathematics.Vector4.TransformRow(v, mvp); // mvp * v (OpenTK: row vector by matrix)
+
+                if (Math.Abs(clip.W) < 1e-6f) continue;
+                float iw = 1f / clip.W;
+                var ndc = new OpenTK.Mathematics.Vector3(clip.X * iw, clip.Y * iw, clip.Z * iw);
+
+                min.X = MathF.Min(min.X, ndc.X); min.Y = MathF.Min(min.Y, ndc.Y);
+                max.X = MathF.Max(max.X, ndc.X); max.Y = MathF.Max(max.Y, ndc.Y);
+
+                if (ndc.X >= -1 && ndc.X <=  1 &&
+                    ndc.Y >= -1 && ndc.Y <=  1 &&
+                    ndc.Z >= -1 && ndc.Z <=  1) inside++;
+            }
+
+            Debug.WriteLine($"NDC bounds: x[{min.X:0.00},{max.X:0.00}] y[{min.Y:0.00},{max.Y:0.00}]  inside={inside}/{total}");
         }
 
         public void UploadLayoutTexture(Image<Rgba32> img)

@@ -607,11 +607,11 @@ void main(){
     GL.Uniform2(_uMapMax, uMax, vMax);
     GL.Uniform2(_uAxes, axU, axV);
 
-#if DEBUG
-    Debug.WriteLine($"[UV-Auto] useA={useA}  texAspect={texAspect:0.###}  " +
-                    $"meshSpan=({bSpanX:0.###},{bSpanZ:0.###})  " +
-                    $"mapMin=({uMin:0.###},{vMin:0.###}) mapMax=({uMax:0.###},{vMax:0.###})  axes=({axU},{axV})");
-#endif
+// #if DEBUG
+//     Debug.WriteLine($"[UV-Auto] useA={useA}  texAspect={texAspect:0.###}  " +
+//                     $"meshSpan=({bSpanX:0.###},{bSpanZ:0.###})  " +
+//                     $"mapMin=({uMin:0.###},{vMin:0.###}) mapMax=({uMax:0.###},{vMax:0.###})  axes=({axU},{axV})");
+// #endif
 }
 
         private void SetUniforms()

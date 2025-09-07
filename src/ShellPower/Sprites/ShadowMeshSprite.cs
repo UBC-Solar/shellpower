@@ -86,9 +86,9 @@ namespace SSCP.ShellPower
 
             GL.GetInteger(GetPName.ElementArrayBufferBinding, out int ibo);
             GL.GetInteger(GetPName.ArrayBufferBinding, out int vbo);
-            Debug.WriteLine($"[RenderMesh] bound VAO={_vaoMesh} VBO={vbo} IBO={ibo} idxType={_indexType}");
-            
-            Debug.WriteLine($"[RenderMesh] count={_meshIndexCount} type={_indexType} vao={_vaoMesh}");
+            // Debug.WriteLine($"[RenderMesh] bound VAO={_vaoMesh} VBO={vbo} IBO={ibo} idxType={_indexType}");
+            //
+            // Debug.WriteLine($"[RenderMesh] count={_meshIndexCount} type={_indexType} vao={_vaoMesh}");
 
             GL.DrawElements(PrimitiveType.Triangles, _meshIndexCount, _indexType, IntPtr.Zero);
 
