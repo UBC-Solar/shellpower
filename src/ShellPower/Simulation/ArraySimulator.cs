@@ -297,18 +297,6 @@ private void SetUniforms(ArraySpec array, double insolation)
             _mrtEnabled = false; // CA0 only in the current debug phase
         }
 
-        private static void CheckShader(int sh, string stage)
-        {
-            GL.GetShader(sh, ShaderParameter.CompileStatus, out int ok);
-            if (ok == 0) throw new InvalidOperationException($"{stage} compile failed:\n{GL.GetShaderInfoLog(sh)}");
-        }
-
-        private static void CheckProgram(int prog)
-        {
-            GL.GetProgram(prog, GetProgramParameterName.LinkStatus, out int ok);
-            if (ok == 0) throw new InvalidOperationException($"Program link failed:\n{GL.GetProgramInfoLog(prog)}");
-        }
-
         // Call this ONLY when the texture is already bound to `target`
         private static void SetTexParamsBound(TextureTarget target = TextureTarget.Texture2D)
         {
@@ -354,17 +342,6 @@ private void SetUniforms(ArraySpec array, double insolation)
             var sunDir = GetSunDir(simInput);
             return Simulate(simInput.Array!, sunDir, simInput.Irradiance, simInput.IndirectIrradiance, simInput.Temperature);
         }
-        
-        private static OpenTK.Mathematics.Vector4 Mul(OpenTK.Mathematics.Matrix4 m, OpenTK.Mathematics.Vector4 v)
-        {
-            // Treat v as a column vector and compute m * v
-            return new OpenTK.Mathematics.Vector4(
-                m.M11 * v.X + m.M12 * v.Y + m.M13 * v.Z + m.M14 * v.W,
-                m.M21 * v.X + m.M22 * v.Y + m.M23 * v.Z + m.M24 * v.W,
-                m.M31 * v.X + m.M32 * v.Y + m.M33 * v.Z + m.M34 * v.W,
-                m.M41 * v.X + m.M42 * v.Y + m.M43 * v.Z + m.M44 * v.W
-            );
-        }
 
         public ArraySimulationStepOutput Simulate(ArraySpec array, System.Numerics.Vector3 sunDir, double wPerM2Insolation, double wPerM2Indirect, double cTemp)
         {
@@ -386,43 +363,6 @@ private void SetUniforms(ArraySpec array, double insolation)
         }
         
         private (int vao, int vbo) _clipTri;
-        private void DrawClipspaceTriangle()
-        {
-            if (_clipTri.vao == 0)
-            {
-                // 3 vertices in clip/NDC space (x,y,z), normals unused
-                float[] verts = {
-                    // pos only; VS will ignore normal
-                    -0.5f, -0.5f, 0.0f,
-                    0.5f, -0.5f, 0.0f,
-                    0.0f,  0.5f, 0.0f
-                };
-                int vao = GL.GenVertexArray();
-                int vbo = GL.GenBuffer();
-                GL.BindVertexArray(vao);
-                GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
-                GL.BufferData(BufferTarget.ArrayBuffer, verts.Length * sizeof(float), verts, BufferUsageHint.StaticDraw);
-
-                GL.EnableVertexAttribArray(0); // position @ location 0
-                GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
-                // we won’t supply attrib 1 (normal) for this test; VS will synthesize one
-
-                _clipTri = (vao, vbo);
-            }
-
-            GL.BindVertexArray(_clipTri.vao);
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-            GL.BindVertexArray(0);
-        }
-        
-        private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir, System.Numerics.Vector3 modelCenter, double modelMaxDim)
-        {
-            var eye = modelCenter + sunDir * 50f;
-            var view = Matrix4.LookAt(TkVec(eye), TkVec(modelCenter), new OpenTK.Mathematics.Vector3(0, 1, 0));
-            float half = (float)(modelMaxDim * 0.5);
-            var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
-            return view * proj;
-        }
         
         private static double ComputeArrayMaxDimension(ArraySpec array)
         {
@@ -434,34 +374,6 @@ private void SetUniforms(ArraySpec array, double insolation)
         {
             Quad3 bb = array.Mesh.BoundingBox;
             return System.Numerics.Vector3.Multiply((bb.Max + bb.Min), 0.5f);
-        }
-        
-        [Conditional("DEBUG")]
-        private static void LogMeshNdcBounds(Matrix4 mvp, Mesh mesh)
-        {
-            var min = new OpenTK.Mathematics.Vector2(float.PositiveInfinity, float.PositiveInfinity);
-            var max = new OpenTK.Mathematics.Vector2(float.NegativeInfinity, float.NegativeInfinity);
-            int inside = 0, total = mesh.points.Length;
-
-            for (int i = 0; i < total; i++)
-            {
-                var p = mesh.points[i];
-                var v = new OpenTK.Mathematics.Vector4(p.X, p.Y, p.Z, 1f);
-                var clip = OpenTK.Mathematics.Vector4.TransformRow(v, mvp); // mvp * v (OpenTK: row vector by matrix)
-
-                if (Math.Abs(clip.W) < 1e-6f) continue;
-                float iw = 1f / clip.W;
-                var ndc = new OpenTK.Mathematics.Vector3(clip.X * iw, clip.Y * iw, clip.Z * iw);
-
-                min.X = MathF.Min(min.X, ndc.X); min.Y = MathF.Min(min.Y, ndc.Y);
-                max.X = MathF.Max(max.X, ndc.X); max.Y = MathF.Max(max.Y, ndc.Y);
-
-                if (ndc.X >= -1 && ndc.X <=  1 &&
-                    ndc.Y >= -1 && ndc.Y <=  1 &&
-                    ndc.Z >= -1 && ndc.Z <=  1) inside++;
-            }
-
-            Debug.WriteLine($"NDC bounds: x[{min.X:0.00},{max.X:0.00}] y[{min.Y:0.00},{max.Y:0.00}]  inside={inside}/{total}");
         }
 
         public void UploadLayoutTexture(Image<Rgba32> img)
@@ -547,27 +459,6 @@ private void SetUniforms(ArraySpec array, double insolation)
                 ArrayPool<byte>.Shared.Return(buf);
                 GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
             }
-        }
-        
-        private static Matrix4 BuildSunPOVMvp(System.Numerics.Vector3 sunDir,
-            System.Numerics.Vector3 modelCenter,
-            double modelMaxDim,
-            Matrix4 model)
-        {
-            var eye  = modelCenter + sunDir * 50f;
-            var view = Matrix4.LookAt(TkVec(eye), TkVec(modelCenter), new OpenTK.Mathematics.Vector3(0, 1, 0));
-            float half = (float)(modelMaxDim * 0.5);
-            var proj = Matrix4.CreateOrthographic(2 * half, 2 * half, 0.1f, 200f);
-
-            // GLSL multiplies column-major with vectors on the right ⇒ proj * view * model
-            return proj * view * model;
-        }
-        
-        [Conditional("DEBUG")]
-        private static void CheckGLErr(string where)
-        {
-            var err = GL.GetError();
-            if (err != ErrorCode.NoError) Debug.WriteLine($"{where}: GL ERROR = {err}");
         }
         
         // Preview: blit CA0 from our offscreen FBO to a target framebuffer (e.g., the control's 'fb')
@@ -670,7 +561,14 @@ private void SetUniforms(ArraySpec array, double insolation)
             }
             if (areaUnlinked > 0 || wattsInUnlinked > 0)
                 Logger.warn("Found texels not linked to any cell. Area={0}m^2, Watts={1}W", areaUnlinked, wattsInUnlinked);
-
+            
+            // TODO: Remove this once reintroducting shading
+            for (int i = 0; i < ncells; i++)
+            {
+                areas[i]   = array.CellSpec.Area;                         // fully lit area per cell
+                wattsIn[i] = array.CellSpec.Area * wPerM2Insolation;      // direct W = area * irradiance
+            }
+            
             for (int i = 0; i < ncells; i++)
             {
                 wattsIn[i] += array.CellSpec.Area * wPerM2Indirect;
@@ -707,6 +605,9 @@ private void SetUniforms(ArraySpec array, double insolation)
                     totalWattsOutByCell += cellSweep.Pmp;
                     stringLitArea += cellLitArea;           // <-- accumulate correctly
                 }
+                
+                double effIrr = (wPerM2Insolation + wPerM2Indirect) * (1.0 - array.EncapsulationLoss);
+                double idealCellPmp = CellSimulator.CalcSweep(cellSpec, effIrr, cTemp).Pmp;
 
                 strings[s] = new ArraySimStringOutput
                 {
@@ -716,7 +617,7 @@ private void SetUniforms(ArraySpec array, double insolation)
                     String = cellStr,
                     Area = cellStr.Cells.Count * cellSpec.Area,
                     AreaShaded = 0, // set below
-                    WattsOutputIdeal = CellSimulator.CalcSweep(cellSpec, wPerM2Insolation, cTemp).Pmp * cellStr.Cells.Count,
+                    WattsOutputIdeal = idealCellPmp * cellStr.Cells.Count,
                 };
                 strings[s].WattsOutput = strings[s].IVTrace.Pmp;
                 strings[s].AreaShaded = Math.Max(0.0, strings[s].Area - stringLitArea);
