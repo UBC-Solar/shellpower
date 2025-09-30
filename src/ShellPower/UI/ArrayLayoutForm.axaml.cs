@@ -6,6 +6,10 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Linq;
 
 namespace SSCP.ShellPower;
 
@@ -211,5 +215,132 @@ public partial class ArrayLayoutForm : Window
             okBtn.Click += (_, __) => dlg.Close();
 
         await dlg.ShowDialog(this);
+    }
+    
+    private async void ButtonSaveBypass_Click(object? s, RoutedEventArgs e)
+    {
+        // If you store this elsewhere, use that value instead:
+        await SaveBypassAsync();
+    }
+
+    private async void ButtonLoadBypass_Click(object? s, RoutedEventArgs e)
+    {
+        await LoadBypassAsync();
+    }
+    
+    private static BypassLayoutFile ExportBypass(ArraySpec array)
+    {
+        var file = new BypassLayoutFile { };
+        for (int s = 0; s < array.Strings.Count; s++)
+        {
+            var str = array.Strings[s];
+            var entry = new BypassStringEntry { StringIndex = s };
+            foreach (var d in str.BypassDiodes)
+            {
+                entry.Diodes.Add(new[] { d.CellIxs.First, d.CellIxs.Second });
+            }
+            file.Strings.Add(entry);
+        }
+        return file;
+    }
+
+    private static void ImportBypass(ArraySpec array, BypassLayoutFile file)
+    {
+        // Bounds-safe: clear & set only what the file provides
+        foreach (var entry in file.Strings)
+        {
+            if (entry.StringIndex < 0 || entry.StringIndex >= array.Strings.Count) continue;
+            var str = array.Strings[entry.StringIndex];
+            str.BypassDiodes.Clear();
+
+            int maxIx = str.Cells.Count - 1;
+            foreach (var pair in entry.Diodes)
+            {
+                if (pair is { Length: 2 })
+                {
+                    int a = pair[0], b = pair[1];
+                    if (a < 0 || b < 0 || a > b || a > maxIx || b > maxIx) continue;
+                    str.BypassDiodes.Add(new ArraySpec.BypassDiode { CellIxs = new Pair<int>(a, b) });
+                }
+            }
+        }
+
+        // If you track forward drop on ArraySpec, set it here:
+        // array.BypassDiodeSpec.VoltageDrop = file.ForwardDropVolts;
+    }
+    
+    private static readonly JsonSerializerOptions _jsonOpts = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    // TODO: wire this to a “Save Bypass…” button/menu
+    private async System.Threading.Tasks.Task SaveBypassAsync()
+    {
+        // Export current in-memory config (what the control edited)
+        var fileModel = ExportBypass(array);
+
+        var sfd = new SaveFileDialog
+        {
+            Filters = { new FileDialogFilter { Name = "JSON", Extensions = { "json" } } },
+            InitialFileName = "bypass_diodes.json"
+        };
+        var path = await sfd.ShowAsync(this);
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(fileModel, _jsonOpts);
+            await File.WriteAllTextAsync(path, json);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog($"Could not save JSON:\n{ex.Message}");
+        }
+    }
+    
+    private async System.Threading.Tasks.Task LoadBypassAsync()
+    {
+        var ofd = new OpenFileDialog
+        {
+            AllowMultiple = false,
+            Filters = { new FileDialogFilter { Name = "JSON", Extensions = { "json" } } }
+        };
+        var result = await ofd.ShowAsync(this);
+        if (result is null || result.Length == 0) return;
+
+        try
+        {
+            var text = await File.ReadAllTextAsync(result[0]);
+            var fileModel = JsonSerializer.Deserialize<BypassLayoutFile>(text, _jsonOpts);
+            if (fileModel is null) throw new InvalidOperationException("Empty or invalid JSON.");
+
+            ImportBypass(array, fileModel);
+
+            if (SelectedCellString is null && array.Strings.Count > 0)
+                SelectedCellString = array.Strings[0];
+            
+            // refresh UI list so labels recompute immediately
+            RefreshStringList();
+
+            ArrayLayoutControl.Array = array;                   // reassign to trigger its setter
+            ArrayLayoutControl.CellString = SelectedCellString; // re-apply selection
+            ArrayLayoutControl.InvalidateVisual();              // belt-and-suspenders repaint
+
+            UpdateView(); // (optional) updates other UI pieces
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog($"Could not load JSON:\n{ex.Message}");
+        }
+    }
+    
+    private void RefreshStringList()
+    {
+        // Re-sync the UI collection from the model; this triggers a full rebind
+        Strings.Clear();
+        foreach (var s in array.Strings)
+            Strings.Add(s);
     }
 }

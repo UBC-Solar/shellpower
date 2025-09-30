@@ -5,9 +5,11 @@
     x:Class="SSCP.ShellPower.CellParamsWindow"
     Width="700" Height="500"
     Title="Cell Parameters">
-  <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,*">
-    <!-- Left: Inputs -->
-    <StackPanel Grid.Row="0" Grid.Column="0" Margin="12" Spacing="6">
+<Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="2*,3*">
+
+  <!-- Left: Inputs (in the stretch row, scrollable) -->
+  <ScrollViewer Grid.Row="1" Grid.Column="0" Margin="12" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="6">
       <TextBlock Text="Standard test conditions (STC)" FontWeight="Bold" />
       <Grid ColumnDefinitions="150,120,150,120" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,12,Auto,Auto">
         <!-- Voc, Isc -->
@@ -42,19 +44,28 @@
                    Foreground="OrangeRed" />
       </Grid>
     </StackPanel>
+  </ScrollViewer>
 
-    <!-- Right: Plot + numbers -->
-    <StackPanel Grid.Row="0" Grid.Column="1" Margin="12" Spacing="8">
-      <TextBlock Text="IV Sweep" FontWeight="Bold" />
-      <sp:SimpleGraph x:Name="chartIV" Height="260" PlotMargins="40,20,20,30"/>
-      <TextBlock x:Name="labelMaxPower" Foreground="LightGray" TextWrapping="Wrap"/>
-    </StackPanel>
-
-    <!-- Buttons -->
-    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal"
-                HorizontalAlignment="Right" Margin="12" Spacing="8">
-      <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
-      <Button x:Name="buttonOK" Content="OK" Click="ButtonOK_Click"/>
-    </StackPanel>
+  <!-- Right: Plot + numbers (in the stretch row, plot expands) -->
+  <Grid Grid.Row="1" Grid.Column="1" Margin="12" RowDefinitions="Auto,* ,Auto">
+    <TextBlock Text="IV Sweep" FontWeight="Bold" />
+    <sp:SimpleGraph x:Name="chartIV"
+                    Grid.Row="1"
+                    MinHeight="260"
+                    VerticalAlignment="Stretch"
+                    HorizontalAlignment="Stretch"
+                    PlotMargins="40,20,20,30"/>
+    <TextBlock x:Name="labelMaxPower"
+               Grid.Row="2"
+               Foreground="LightGray"
+               TextWrapping="Wrap"/>
   </Grid>
+
+  <!-- Buttons stay in the bottom Auto row -->
+  <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal"
+              HorizontalAlignment="Right" Margin="12" Spacing="8">
+    <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
+    <Button x:Name="buttonOK" Content="OK" Click="ButtonOK_Click"/>
+  </StackPanel>
+</Grid>
 </Window>

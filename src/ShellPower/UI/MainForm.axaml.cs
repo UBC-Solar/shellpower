@@ -320,9 +320,18 @@ namespace SSCP.ShellPower {
             JsonSpecConverter.Write(spec, filename);
         }
 
-        private async void Layout_Click(object? sender, RoutedEventArgs e) {
-            arrayLayoutWindow ??= new ArrayLayoutForm(simInput.Array) { Title = "Layout" };
-            await arrayLayoutWindow.ShowDialog(this);
+        // private async void Layout_Click(object? sender, RoutedEventArgs e) {
+        //     arrayLayoutWindow ??= new ArrayLayoutForm(simInput.Array) { Title = "Layout" };
+        //     await arrayLayoutWindow.ShowDialog(this);
+        // }
+        
+        private async void Layout_Click(object? sender, RoutedEventArgs e)
+        {
+            var dlg = new ArrayLayoutForm(simInput.Array) { Title = "Layout" };
+
+            // IMPORTANT: await ShowDialog to run it modally and avoid reentrancy
+            await dlg.ShowDialog(this);
+            // dlg is closed and disposable now; don't try to reuse it
         }
 
         private async void CellParameters_Click(object? sender, RoutedEventArgs e) {

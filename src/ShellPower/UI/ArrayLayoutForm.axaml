@@ -14,6 +14,8 @@
                       Margin="15,0,0,0" IsVisible="False"
                       Checked="CheckBoxEditDiodes_Changed" Unchecked="CheckBoxEditDiodes_Changed"/>
             <Button x:Name="ButtonOK" Content="OK" Margin="15,0,0,0" Click="ButtonOK_Click"/>
+            <Button x:Name="ButtonSaveBypass" Content="Save Bypass Diodes" Margin="15,0,0,0" Click="ButtonSaveBypass_Click"/>
+            <Button x:Name="ButtonLoadBypass" Content="Load Bypass Diodes" Margin="15,0,0,0" Click="ButtonLoadBypass_Click"/>
             <Button x:Name="ButtonCancel" Content="Cancel" Margin="5,0,0,0" Click="ButtonCancel_Click"/>
             <Button x:Name="ButtonLoadLayout" Content="Load Layout Texture..." Margin="15,0,0,0"
                     Click="ButtonLoadLayout_Click"/>
