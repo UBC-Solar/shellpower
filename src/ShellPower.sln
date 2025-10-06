@@ -1,8 +1,6 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
+Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2010
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShellPower", "ShellPower\ShellPower.csproj", "{9BBCA539-0000-0000-0000-000000000000}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{354E6399-0813-4D53-9B7C-39E5E28F81AC}"
 	ProjectSection(SolutionItems) = preProject
 		Local.testsettings = Local.testsettings
@@ -10,25 +8,49 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		TraceAndTestImpact.testsettings = TraceAndTestImpact.testsettings
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShellPower.Core", "ShellPower.Core\ShellPower.Core.csproj", "{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShellPower.App", "ShellPower.App\ShellPower.App.csproj", "{89D8A203-148A-4D32-BE6C-AB6C0B09880B}"
+EndProject
 Global
-	GlobalSection(TestCaseManagementSettings) = postSolution
-		CategoryFile = ShellPower.vsmdi
-	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Debug|x86 = Debug|x86
+		Debug|x64 = Debug|x64
 		Release|Any CPU = Release|Any CPU
 		Release|x86 = Release|x86
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{9BBCA539-0000-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9BBCA539-0000-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9BBCA539-0000-0000-0000-000000000000}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{9BBCA539-0000-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9BBCA539-0000-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9BBCA539-0000-0000-0000-000000000000}.Release|x86.ActiveCfg = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|x86.Build.0 = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Debug|x64.Build.0 = Debug|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|x86.ActiveCfg = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|x86.Build.0 = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|x64.ActiveCfg = Release|Any CPU
+		{8F676497-A410-4BF6-BDBA-A3F1481DC5F5}.Release|x64.Build.0 = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|x86.Build.0 = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Debug|x64.Build.0 = Debug|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|x86.ActiveCfg = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|x86.Build.0 = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|x64.ActiveCfg = Release|Any CPU
+		{89D8A203-148A-4D32-BE6C-AB6C0B09880B}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(TestCaseManagementSettings) = postSolution
+		CategoryFile = ShellPower.vsmdi
 	EndGlobalSection
 EndGlobal

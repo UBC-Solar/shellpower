@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Class library (no exe) -->
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Nice-to-have metadata -->
+    <AssemblyName>SSCP.ShellPower.Core</AssemblyName>
+    <RootNamespace>SSCP.ShellPower</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Optional: define a symbol you can #if around if needed -->
+    <DefineConstants>$(DefineConstants);CORE_LIBRARY</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep only what Core actually needs -->
+    <!-- OpenGL *bindings* (no windowing/context creation here) -->
+    <PackageReference Include="OpenTK.Graphics" Version="4.8.0" />
+    <!-- If you use OpenTK’s math types anywhere; otherwise prefer System.Numerics -->
+    <PackageReference Include="OpenTK.Mathematics" Version="4.8.0" />
+
+    <!-- Imaging + serialization -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="System.Text.Json" Version="8.*" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- If your shaders or other runtime assets live in Core, pick ONE of these strategies -->
+
+  <!-- A) Embed as resources (load via Assembly.GetManifestResourceStream) -->
+  <!--
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Shaders\**\*.*" />
+  </ItemGroup>
+  -->
+
+  <!-- B) Copy loose files alongside the build outputs (Worker/App can read by path) -->
+  <!--
+  <ItemGroup>
+    <Content Include="Assets\Shaders\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  -->
+</Project>
