@@ -3,69 +3,115 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sp="clr-namespace:SSCP.ShellPower"
     x:Class="SSCP.ShellPower.CellParamsWindow"
-    Width="700" Height="500"
+    Width="900"
+    Height="500"
+    MinWidth="680"
+    MinHeight="420"
+    UseLayoutRounding="True"
     Title="Cell Parameters">
-<Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="2*,3*">
 
-  <!-- Left: Inputs (in the stretch row, scrollable) -->
-  <ScrollViewer Grid.Row="1" Grid.Column="0" Margin="12" VerticalScrollBarVisibility="Auto">
-    <StackPanel Spacing="6">
-      <TextBlock Text="Standard test conditions (STC)" FontWeight="Bold" />
-      <Grid ColumnDefinitions="150,120,150,120" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,12,Auto,Auto">
-        <!-- Voc, Isc -->
-        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Voc (V)"/>
-        <TextBox x:Name="textBoxVoc" Grid.Row="0" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
-        <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="Isc (A)"/>
-        <TextBox x:Name="textBoxIsc" Grid.Row="0" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+  <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="4*,Auto,2*">
+    <!-- Top spacer/title row (Auto) can be left empty; main content is in Row=1 -->
 
-        <!-- dVoc/dT, dIsc/dT -->
-        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="dVoc/dT (V/°C)"/>
-        <TextBox x:Name="textBoxVocTemp" Grid.Row="1" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
-        <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="dIsc/dT (A/°C)"/>
-        <TextBox x:Name="textBoxIscTemp" Grid.Row="1" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+    <!-- LEFT: Inputs (scrollable both ways to prevent clipping on narrow windows) -->
+    <ScrollViewer Grid.Row="1" Grid.Column="0"
+                  Margin="12"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Auto">
+      <StackPanel Spacing="10">
+        <TextBlock Text="Standard test conditions (STC)" FontWeight="Bold" />
 
-        <!-- Area, N ideal, Series R -->
-        <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Area (m²)"/>
-        <TextBox x:Name="textBoxArea" Grid.Row="2" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
-        <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="N (ideality)"/>
-        <TextBox x:Name="textBoxNIdeal" Grid.Row="2" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+        <!-- Flexible 4-column form: label, input, label, input -->
+        <Grid ColumnDefinitions="Auto,*,Auto,*"
+              RowDefinitions="Auto,Auto,Auto,Auto,12,Auto,Auto"
+              ColumnSpacing="10" RowSpacing="6">
 
-        <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Series R (Ω)"/>
-        <TextBox x:Name="textBoxSeriesR" Grid.Row="3" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
+          <!-- Row 0: Voc, Isc -->
+          <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Voc (V)"/>
+          <TextBox  x:Name="textBoxVoc" Grid.Row="0" Grid.Column="1"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
 
-        <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Text="Temperature (°C)"/>
-        <TextBox x:Name="textBoxTemp" Grid.Row="8" Grid.Column="1" TextChanged="TextBox_TextChanged"/>
-        <TextBlock Grid.Row="8" Grid.Column="2" VerticalAlignment="Center" Text="Irradiance (W/m²)"/>
-        <TextBox x:Name="textBoxInsolation" Grid.Row="8" Grid.Column="3" TextChanged="TextBox_TextChanged"/>
+          <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="Isc (A)"/>
+          <TextBox  x:Name="textBoxIsc" Grid.Row="0" Grid.Column="3"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
 
-        <!-- Validation status -->
-        <TextBlock x:Name="labelStatus"
-                   Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="4"
-                   Foreground="OrangeRed" />
-      </Grid>
+          <!-- Row 1: dVoc/dT, dIsc/dT -->
+          <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="dVoc/dT (V/°C)"/>
+          <TextBox  x:Name="textBoxVocTemp" Grid.Row="1" Grid.Column="1"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="dIsc/dT (A/°C)"/>
+          <TextBox  x:Name="textBoxIscTemp" Grid.Row="1" Grid.Column="3"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <!-- Row 2: Area, N (ideality) -->
+          <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Area (m²)"/>
+          <TextBox  x:Name="textBoxArea" Grid.Row="2" Grid.Column="1"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="N (ideality)"/>
+          <TextBox  x:Name="textBoxNIdeal" Grid.Row="2" Grid.Column="3"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <!-- Row 3: Series R (single pair) -->
+          <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Series R (Ω)"/>
+          <TextBox  x:Name="textBoxSeriesR" Grid.Row="3" Grid.Column="1"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <!-- Spacer row (Row 4) via 12 in RowDefinitions -->
+
+          <!-- Row 5: Temperature, Irradiance -->
+          <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="Temperature (°C)"/>
+          <TextBox  x:Name="textBoxTemp" Grid.Row="5" Grid.Column="1"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <TextBlock Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Text="Irradiance (W/m²)"/>
+          <TextBox  x:Name="textBoxInsolation" Grid.Row="5" Grid.Column="3"
+                    MinWidth="110" HorizontalAlignment="Stretch"
+                    TextChanged="TextBox_TextChanged"/>
+
+          <!-- Row 6: Validation status -->
+          <TextBlock x:Name="labelStatus"
+                     Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4"
+                     Foreground="OrangeRed" TextWrapping="Wrap" />
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Splitter between panes (optional but handy) -->
+    <GridSplitter Grid.Row="1" Grid.Column="1"
+                  Width="6" HorizontalAlignment="Stretch"
+                  Background="#22000000" />
+
+    <!-- RIGHT: Plot + numbers (expands) -->
+    <Grid Grid.Row="1" Grid.Column="2" Margin="12" RowDefinitions="Auto,*,Auto">
+      <TextBlock Text="IV Sweep" FontWeight="Bold" />
+      <sp:SimpleGraph x:Name="chartIV"
+                      Grid.Row="1"
+                      MinHeight="260"
+                      VerticalAlignment="Stretch"
+                      HorizontalAlignment="Stretch"
+                      PlotMargins="40,20,20,30"/>
+      <TextBlock x:Name="labelMaxPower"
+                 Grid.Row="2"
+                 Foreground="LightGray"
+                 TextWrapping="Wrap"/>
+    </Grid>
+
+    <!-- Bottom buttons -->
+    <StackPanel Grid.Row="2" Grid.ColumnSpan="3"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right" Margin="12" Spacing="8">
+      <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
+      <Button x:Name="buttonOK" Content="OK" Click="ButtonOK_Click"/>
     </StackPanel>
-  </ScrollViewer>
-
-  <!-- Right: Plot + numbers (in the stretch row, plot expands) -->
-  <Grid Grid.Row="1" Grid.Column="1" Margin="12" RowDefinitions="Auto,* ,Auto">
-    <TextBlock Text="IV Sweep" FontWeight="Bold" />
-    <sp:SimpleGraph x:Name="chartIV"
-                    Grid.Row="1"
-                    MinHeight="260"
-                    VerticalAlignment="Stretch"
-                    HorizontalAlignment="Stretch"
-                    PlotMargins="40,20,20,30"/>
-    <TextBlock x:Name="labelMaxPower"
-               Grid.Row="2"
-               Foreground="LightGray"
-               TextWrapping="Wrap"/>
   </Grid>
-
-  <!-- Buttons stay in the bottom Auto row -->
-  <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal"
-              HorizontalAlignment="Right" Margin="12" Spacing="8">
-    <Button x:Name="buttonCancel" Content="Cancel" Click="ButtonCancel_Click"/>
-    <Button x:Name="buttonOK" Content="OK" Click="ButtonOK_Click"/>
-  </StackPanel>
-</Grid>
 </Window>

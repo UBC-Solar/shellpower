@@ -1,20 +1,57 @@
 using System.Globalization;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
 namespace SSCP.ShellPower {
     public partial class CellParamsWindow : Window {
         private readonly ArraySimulationStepInput input;
-        
+
         // parsed values
         private double voc, isc, dvocdt, discdt, nideal, seriesr, area;
         private double tempC, wattsIn;
 
+        // Reuse-safe dialog plumbing
+        private TaskCompletionSource<bool>? _tcs;
+
         public CellParamsWindow(ArraySimulationStepInput input) {
             this.input = input;
             InitializeComponent();
-            // Populate once controls exist
+
+            // Populate once controls exist (first show). For subsequent shows we call ResetTextBoxes() explicitly.
             Opened += (_, __) => ResetTextBoxes();
+        }
+
+        /// <summary>
+        /// Show the window non-modally but await an OK/Cancel boolean.
+        /// true = OK pressed, false = Cancel/close.
+        /// </summary>
+        public Task<bool> ShowAsync(Window owner) {
+            // If already visible, just activate and return existing task if any.
+            if (IsVisible) {
+                Activate();
+                return _tcs?.Task ?? Task.FromResult(false);
+            }
+
+            // New awaitable cycle
+            _tcs = new TaskCompletionSource<bool>();
+
+            // Refresh values every time we show
+            ResetTextBoxes();
+
+            // Show modeless with owner (or call ShowDialog if you prefer a modal flow)
+            Show(owner);
+            Activate();
+            return _tcs.Task;
+        }
+
+        protected override void OnClosing(WindowClosingEventArgs e) {
+            // Prevent disposal so we can re-show later.
+            e.Cancel = true;
+            Hide();
+
+            // If someone hit the window close button, treat that like Cancel.
+            _tcs?.TrySetResult(false);
         }
 
         private void InitializeComponent() {
@@ -137,11 +174,14 @@ namespace SSCP.ShellPower {
             UpdateSpec(input.Array.CellSpec);
             input.Temperature = tempC;
             input.Irradiance  = wattsIn;
-            Close();
+
+            _tcs?.TrySetResult(true); // signal OK
+            Hide();                   // don't Close() — keeps window reusable
         }
 
         private void ButtonCancel_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
-            Close();
+            _tcs?.TrySetResult(false); // signal Cancel
+            Hide();                    // don't Close()
         }
     }
 }
