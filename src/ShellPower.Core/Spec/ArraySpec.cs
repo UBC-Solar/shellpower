@@ -31,10 +31,10 @@ namespace SSCP.ShellPower
         public BoundsSpec LayoutBounds { get; set; }
 
         /// <summary>Per-cell properties (area, efficiency, etc.).</summary>
-        public CellSpec CellSpec { get; }
+        public CellSpec CellSpec { get; set; }
 
         /// <summary>Bypass diode spec (single type for all).</summary>
-        public DiodeSpec BypassDiodeSpec { get; }
+        public DiodeSpec BypassDiodeSpec { get; set; }
 
         /// <summary>Cells grouped into series strings.</summary>
         public List<CellString> Strings { get; }
