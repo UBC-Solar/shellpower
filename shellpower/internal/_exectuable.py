@@ -11,6 +11,9 @@ class ShellPowerExecutable:
         filepath = pathlib.Path(__file__).resolve().absolute()
         build_executable = filepath.parent.parent.parent / "src" / "ShellPower.Worker" / "bin" / "Release" / "net9.0" / str(self._rid) / "ShellPower.Worker"
 
+        if self._rid.system == "Windows":
+            build_executable = build_executable.with_suffix(".Worker.exe")
+
         if not pathlib.Path(build_executable).exists():
             raise RuntimeError(f"ShellPower.Worker has not been build for this system! \n"
                                f"Please navigate to the `src` folder and run \n dotnet publish ShellPower.Worker -c "
