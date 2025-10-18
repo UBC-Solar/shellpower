@@ -5,8 +5,8 @@ if __name__ == "__main__":
     simulator = ArraySimulator()
 
     simulator_input = ArraySimulatorInput(**{
-        "MeshPath": "./../arrays/luminos/luminos.stl",
-        "LayoutTexturePath": "./../arrays/luminos/luminos-splines-6-string-no-bypass-rot.png",
+        "MeshPath": "./arrays/luminos/luminos.stl",
+        "LayoutTexturePath": "./arrays/luminos/luminos-splines-6-string-no-bypass-rot.png",
         "Latitude": -23.7,
         "Longitude": 133.8,
         "HeadingRadians": 3.141592653589793,
