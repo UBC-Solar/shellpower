@@ -11,7 +11,7 @@ class ShellPowerExecutable:
         filepath = pathlib.Path(__file__).resolve().absolute()
         build_executable = filepath.parent.parent.parent / "src" / "ShellPower.Worker" / "bin" / "Release" / "net9.0" / str(self._rid) / "ShellPower.Worker"
 
-        if self._rid.system == "Windows":
+        if self._rid.system == "win":
             build_executable = build_executable.with_suffix(".Worker.exe")
 
         if not pathlib.Path(build_executable).exists():
