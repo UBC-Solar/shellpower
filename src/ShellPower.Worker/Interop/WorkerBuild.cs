@@ -5,25 +5,9 @@ namespace SSCP.ShellPower;
 
 public static class SimulationBuilder
 {
-    public static Mesh LoadMesh(string path)
-    {
-        var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-        IMeshParser parser = ext switch
-        {
-            "stl"   => new MeshParserStl(),
-            "3dxml" => new MeshParser3DXml(),
-            _       => throw new ArgumentException($"Unsupported mesh type: .{ext}")
-        };
-        parser.Parse(path);
-        var mesh = parser.GetMesh();
-        var size = mesh.BoundingBox.Max - mesh.BoundingBox.Min;
-        if (size.Length() > 1000) mesh = MeshUtils.Scale(mesh, 0.001f);
-        return mesh;
-    }
-
     public static ArraySimulationStepInput BuildInput(SimulationRequest req)
     {
-        var mesh   = LoadMesh(req.MeshPath);
+        var mesh   = ArraySpec.LoadMesh(req.MeshPath);
         Image<Rgba32> layout = Image.Load<Rgba32>(req.LayoutTexturePath);
 
         var array = new ArraySpec

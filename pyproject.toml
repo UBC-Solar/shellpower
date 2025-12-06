@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.12.1",
+    "pythonnet>=3.0.5",
 ]
 
 [build-system]

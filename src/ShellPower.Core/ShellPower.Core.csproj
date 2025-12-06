@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- Class library (no exe) -->
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net9.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
@@ -14,6 +14,7 @@
 
     <!-- Optional: define a symbol you can #if around if needed -->
     <DefineConstants>$(DefineConstants);CORE_LIBRARY</DefineConstants>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>

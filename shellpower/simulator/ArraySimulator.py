@@ -1,11 +1,11 @@
 from shellpower.simulator import ArraySimulatorOutput, ArraySimulatorInput
-from shellpower.internal import ShellPowerExecutable
+from shellpower.internal import ShellPowerWorker
 import json, subprocess, sys, datetime
 
 
 class ArraySimulator:
     def __init__(self):
-        self._executable = ShellPowerExecutable()
+        self._executable = ShellPowerWorker()
 
     def simulate(self, simulator_input: ArraySimulatorInput) -> ArraySimulatorOutput:
         proc = subprocess.run(
