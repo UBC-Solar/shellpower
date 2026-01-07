@@ -20,10 +20,14 @@ class ShellPowerExecutable:
 
         match executable_type:
             case ShellPowerExecutableType.Worker:
-                build_executable = filepath.parent.parent.parent / "src" / str(executable_type) / "bin" / "Release" / "net9.0" / str(self._rid) / "SSCP.ShellPower.Worker"
+                executable_path = filepath.parent.parent.parent / "src" / str(executable_type) / "bin" / "Release" / "net9.0" / str(self._rid)
 
                 if self._rid.system == "win" and executable_type:
-                    build_executable = build_executable.with_suffix(".Worker.exe")
+                    executable_name = "ShellPower.Worker.exe"
+                else:
+                    executable_name = "SSCP.ShellPower.Worker"
+
+                build_executable = executable_path / executable_name
 
             case ShellPowerExecutableType.Core:
                 build_executable = filepath.parent.parent.parent / "src" / str(executable_type) / "bin" / "Release" / "net8.0"
@@ -32,7 +36,8 @@ class ShellPowerExecutable:
                 raise ValueError(f"Unsupported ShellPowerExecutableType to link to: {str(executable_type)}")
 
         if not pathlib.Path(build_executable).exists():
-            raise RuntimeError(f"ShellPower.Worker has not been build for this system! \n"
+            raise RuntimeError(f"ShellPower.Worker has not been built for this system! \n"
+                               f"Expected to find the file: {build_executable}\n"
                                f"Please navigate to the `src` folder and run \n dotnet publish ShellPower.Worker -c "
                                f"Release -r {self._rid}  --self-contained false -p:PublishSingleFile=true ")
 
