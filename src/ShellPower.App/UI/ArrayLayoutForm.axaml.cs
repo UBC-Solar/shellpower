@@ -89,7 +89,13 @@ public partial class ArrayLayoutForm : Window
                 }
                 return cellStr.Cells.Count == 0;
             });
+
+            if (array.LayoutTexture != null)
+            {
+                array.Recolor();
+            }
         }
+        
         UpdateView();
     }
 

@@ -18,6 +18,25 @@ namespace SSCP.ShellPower
             BypassDiodeSpec = new DiodeSpec();
         }
 
+        /// <summary>
+        /// Create an ArraySpec from a layout and texture
+        /// </summary>
+        /// <param name="layoutTexturePath"></param>
+        /// <param name="meshPath"></param>
+        public ArraySpec(string layoutTexturePath, string meshPath)
+        {
+            Strings = new List<CellString>();
+            CellSpec = new CellSpec();
+            BypassDiodeSpec = new DiodeSpec();
+            
+            LayoutTexture = Image.Load<Rgba32>(layoutTexturePath);
+            Mesh = LoadMesh(meshPath);
+            LayoutBounds = new BoundsSpec { MinX = -0.115, MaxX = 2.035, MinZ = -0.23, MaxZ = 4.59 };
+            EncapsulationLoss = 0.025;
+            
+            ReadStringsFromColors();
+        }
+
         /// <summary>Shape of the array. Dimensions in meters; +Y is up.</summary>
         public Mesh Mesh { get; set; } = default!;
 
@@ -247,6 +266,22 @@ namespace SSCP.ShellPower
             {
                 cellStr.Cells.Sort((a, b) => a.Color.B.CompareTo(b.Color.B));
             }
+        }
+        
+        public static Mesh LoadMesh(string path)
+        {
+            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            IMeshParser parser = ext switch
+            {
+                "stl"   => new MeshParserStl(),
+                "3dxml" => new MeshParser3DXml(),
+                _       => throw new ArgumentException($"Unsupported mesh type: .{ext}")
+            };
+            parser.Parse(path);
+            var mesh = parser.GetMesh();
+            var size = mesh.BoundingBox.Max - mesh.BoundingBox.Min;
+            if (size.Length() > 1000) mesh = MeshUtils.Scale(mesh, 0.001f);
+            return mesh;
         }
     }
 }
