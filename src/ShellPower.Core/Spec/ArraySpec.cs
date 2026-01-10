@@ -64,6 +64,49 @@ namespace SSCP.ShellPower
             };
             ImportBypassDiodes(fileModel);
         }
+
+        public bool RemoveBypassDiode(BypassDiode diode)
+        {
+            bool removed = false;
+            foreach (var str in Strings)
+            {
+                if (str.BypassDiodes.Remove(diode))
+                {
+                    removed = true;
+                    break;
+                } 
+            }
+
+            return removed;
+        }
+        
+        public ArraySpec.BypassDiode AddBypassDiode(CellString cellString, int ix0, int ix1)
+        {
+            if (ix0 < 0 || ix1 < 0)
+            {
+                throw new InvalidOperationException("Cell indices cannot be negative!");
+            }
+
+            var newDiode = new BypassDiode { CellIxs = new Pair<int>(ix0, ix1) };
+
+            return AddBypassDiode(cellString, newDiode);
+        }
+
+        public ArraySpec.BypassDiode AddBypassDiode(CellString cellString, Cell a, Cell b)
+        {
+            int ix0 = cellString.Cells.IndexOf(a);
+            int ix1 = cellString.Cells.IndexOf(b);
+
+            return AddBypassDiode(cellString, ix0, ix1);
+        }
+
+        public BypassDiode AddBypassDiode(CellString cellString, BypassDiode diode)
+        {
+            if (!cellString.BypassDiodes.Remove(diode))
+                cellString.BypassDiodes.Add(diode);
+
+            return diode;
+        }
         
         // Need func to add a bypass diode 
         

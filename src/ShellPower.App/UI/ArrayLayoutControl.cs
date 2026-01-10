@@ -518,9 +518,9 @@ public partial class ArrayLayoutControl : Control
         {
             int ix0 = Math.Min(_bypassJunctions[0], _bypassJunctions[1]);
             int ix1 = Math.Max(_bypassJunctions[0], _bypassJunctions[1]) - 1;
-            var newDiode = new ArraySpec.BypassDiode { CellIxs = new Pair<int>(ix0, ix1) };
-            if (!CellString.BypassDiodes.Remove(newDiode))
-                CellString.BypassDiodes.Add(newDiode);
+            
+            Array?.AddBypassDiode(CellString, ix0, ix1);
+            
             _bypassJunctions.Clear();
         }
     }
