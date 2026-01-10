@@ -243,30 +243,30 @@ public partial class ArrayLayoutForm : Window
         return file;
     }
 
-    private static void ImportBypass(ArraySpec array, BypassLayoutFile file)
-    {
-        // Bounds-safe: clear & set only what the file provides
-        foreach (var entry in file.Strings)
-        {
-            if (entry.StringIndex < 0 || entry.StringIndex >= array.Strings.Count) continue;
-            var str = array.Strings[entry.StringIndex];
-            str.BypassDiodes.Clear();
-
-            int maxIx = str.Cells.Count - 1;
-            foreach (var pair in entry.Diodes)
-            {
-                if (pair is { Length: 2 })
-                {
-                    int a = pair[0], b = pair[1];
-                    if (a < 0 || b < 0 || a > b || a > maxIx || b > maxIx) continue;
-                    str.BypassDiodes.Add(new ArraySpec.BypassDiode { CellIxs = new Pair<int>(a, b) });
-                }
-            }
-        }
-
-        // If you track forward drop on ArraySpec, set it here:
-        // array.BypassDiodeSpec.VoltageDrop = file.ForwardDropVolts;
-    }
+    // private static void ImportBypass(ArraySpec array, BypassLayoutFile file)
+    // {
+    //     // Bounds-safe: clear & set only what the file provides
+    //     foreach (var entry in file.Strings)
+    //     {
+    //         if (entry.StringIndex < 0 || entry.StringIndex >= array.Strings.Count) continue;
+    //         var str = array.Strings[entry.StringIndex];
+    //         str.BypassDiodes.Clear();
+    //
+    //         int maxIx = str.Cells.Count - 1;
+    //         foreach (var pair in entry.Diodes)
+    //         {
+    //             if (pair is { Length: 2 })
+    //             {
+    //                 int a = pair[0], b = pair[1];
+    //                 if (a < 0 || b < 0 || a > b || a > maxIx || b > maxIx) continue;
+    //                 str.BypassDiodes.Add(new ArraySpec.BypassDiode { CellIxs = new Pair<int>(a, b) });
+    //             }
+    //         }
+    //     }
+    //
+    //     // If you track forward drop on ArraySpec, set it here:
+    //     // array.BypassDiodeSpec.VoltageDrop = file.ForwardDropVolts;
+    // }
     
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
@@ -315,7 +315,7 @@ public partial class ArrayLayoutForm : Window
             var fileModel = JsonSerializer.Deserialize<BypassLayoutFile>(text, _jsonOpts);
             if (fileModel is null) throw new InvalidOperationException("Empty or invalid JSON.");
 
-            ImportBypass(array, fileModel);
+            array.ImportBypassDiodes(fileModel);
 
             if (SelectedCellString is null && array.Strings.Count > 0)
                 SelectedCellString = array.Strings[0];
