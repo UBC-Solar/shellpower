@@ -527,16 +527,8 @@ public partial class ArrayLayoutControl : Control
 
     private void ClickCell(ArraySpec.Cell cell)
     {
-        if (CellString == null) return;
-        if (!CellString.Cells.Remove(cell))
-        {
-            CellString.Cells.Add(cell);
-        }
-        else
-        {
-            // prune bypass diodes
-            CellString.BypassDiodes.RemoveAll(d => d.CellIxs.First >= CellString.Cells.Count || d.CellIxs.Second >= CellString.Cells.Count);
-        }
+        if (CellString == null || Array == null) return;
+        Array.AddCellToCellString(cell, CellString);
     }
 
     #endregion

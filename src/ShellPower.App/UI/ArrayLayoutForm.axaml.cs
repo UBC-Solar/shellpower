@@ -81,17 +81,10 @@ public partial class ArrayLayoutForm : Window
         {
             // just finished editing
             var editedStr = ArrayLayoutControl.CellString;
-            array.Strings.RemoveAll(cellStr =>
-            {
-                if (cellStr != editedStr)
-                {
-                    cellStr.Cells.RemoveAll(cell => editedStr.Cells.Contains(cell));
-                }
-                return cellStr.Cells.Count == 0;
-            });
+            array.Strings.RemoveAll(cellStr => cellStr.Cells.Count == 0);
 
             if (array.LayoutTexture != null)
-            {
+            { 
                 array.Recolor();
             }
         }

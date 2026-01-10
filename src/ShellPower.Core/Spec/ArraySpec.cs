@@ -210,6 +210,29 @@ namespace SSCP.ShellPower
         }
 
         /// <summary>
+        /// Add a Cell to a CellString, removing it from the string it was on before.
+        /// </summary>
+        public bool AddCellToCellString(Cell cell, CellString editedCellString)
+        {
+            bool addedToCellString = false;
+            if (!editedCellString.Cells.Contains(cell))
+            {
+                editedCellString.Cells.Add(cell);
+                addedToCellString = true;
+            }
+            
+            foreach (var cellStr in Strings)
+            {
+                if (cellStr != editedCellString)
+                {
+                    cellStr.Cells.RemoveAll(candidateCell => editedCellString.Cells.Contains(candidateCell));
+                }
+            }
+            
+            return addedToCellString;
+        }
+
+        /// <summary>
         /// Rebuilds Strings and Cells from the layout image’s colors.
         /// Any opaque non-grayscale pixel is considered a cell texel.
         /// Cells are grouped into strings by (R,G,0) key; per-cell key is (R,G,B).
