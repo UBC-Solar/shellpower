@@ -837,6 +837,7 @@ dependencies = [
 dev = [
     { name = "ipykernel" },
     { name = "matplotlib" },
+    { name = "pillow" },
 ]
 
 [package.metadata]
@@ -849,6 +850,7 @@ requires-dist = [
 dev = [
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "pillow", specifier = ">=12.1.0" },
 ]
 
 [[package]]
