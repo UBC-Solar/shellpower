@@ -1,0 +1,37 @@
+{
+  "Strings": [
+    {
+      "StringIndex": 0,
+      "Diodes": []
+    },
+    {
+      "StringIndex": 1,
+      "Diodes": [
+        [
+          45,
+          49
+        ],
+        [
+          29,
+          63
+        ]
+      ]
+    },
+    {
+      "StringIndex": 2,
+      "Diodes": []
+    },
+    {
+      "StringIndex": 3,
+      "Diodes": []
+    },
+    {
+      "StringIndex": 4,
+      "Diodes": []
+    },
+    {
+      "StringIndex": 5,
+      "Diodes": []
+    }
+  ]
+}

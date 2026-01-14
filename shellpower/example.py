@@ -4,7 +4,7 @@ import datetime
 if __name__ == "__main__":
     from shellpower.simulator.Simulation import Simulation
 
-    idk = Simulation.ArraySpec("./../arrays/luminos/luminos-splines-6-string-no-bypass-rot.png", "./../arrays/luminos/luminos.stl")
+    idk = Simulation.ArraySpec("./../arrays/luminos/luminos-splines-6-string-no-bypass-rot.png", "./../arrays/luminos/luminos.stl", "./bypass_diodes.json")
 
     print(dir(idk))
 
