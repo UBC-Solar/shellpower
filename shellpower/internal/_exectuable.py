@@ -30,7 +30,7 @@ class ShellPowerExecutable:
                 build_executable = executable_path / executable_name
 
             case ShellPowerExecutableType.Core:
-                build_executable = filepath.parent.parent.parent / "src" / str(executable_type) / "bin" / "Release" / "net8.0"
+                build_executable = filepath.parent.parent.parent / "src" / str(executable_type) / "bin" / "Release" / "net9.0"
 
             case _:
                 raise ValueError(f"Unsupported ShellPowerExecutableType to link to: {str(executable_type)}")

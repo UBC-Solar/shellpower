@@ -518,25 +518,17 @@ public partial class ArrayLayoutControl : Control
         {
             int ix0 = Math.Min(_bypassJunctions[0], _bypassJunctions[1]);
             int ix1 = Math.Max(_bypassJunctions[0], _bypassJunctions[1]) - 1;
-            var newDiode = new ArraySpec.BypassDiode { CellIxs = new Pair<int>(ix0, ix1) };
-            if (!CellString.BypassDiodes.Remove(newDiode))
-                CellString.BypassDiodes.Add(newDiode);
+            
+            Array?.AddBypassDiode(CellString, ix0, ix1);
+            
             _bypassJunctions.Clear();
         }
     }
 
     private void ClickCell(ArraySpec.Cell cell)
     {
-        if (CellString == null) return;
-        if (!CellString.Cells.Remove(cell))
-        {
-            CellString.Cells.Add(cell);
-        }
-        else
-        {
-            // prune bypass diodes
-            CellString.BypassDiodes.RemoveAll(d => d.CellIxs.First >= CellString.Cells.Count || d.CellIxs.Second >= CellString.Cells.Count);
-        }
+        if (CellString == null || Array == null) return;
+        Array.AddCellToCellString(cell, CellString);
     }
 
     #endregion

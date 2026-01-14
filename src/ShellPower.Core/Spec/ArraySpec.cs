@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.Json;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.Text.Json.Serialization;
 
 namespace SSCP.ShellPower
 {
@@ -25,10 +27,6 @@ namespace SSCP.ShellPower
         /// <param name="meshPath"></param>
         public ArraySpec(string layoutTexturePath, string meshPath)
         {
-            Strings = new List<CellString>();
-            CellSpec = new CellSpec();
-            BypassDiodeSpec = new DiodeSpec();
-            
             LayoutTexture = Image.Load<Rgba32>(layoutTexturePath);
             Mesh = LoadMesh(meshPath);
             LayoutBounds = new BoundsSpec { MinX = -0.115, MaxX = 2.035, MinZ = -0.23, MaxZ = 4.59 };
@@ -36,7 +34,146 @@ namespace SSCP.ShellPower
             
             ReadStringsFromColors();
         }
+        
+        /// <summary>
+        /// Create an ArraySpec from a layout, texture, and bypass diodes
+        /// </summary>
+        /// <param name="layoutTexturePath"></param>
+        /// <param name="meshPath"></param>
+        /// <param name="bypassDiodesPath"></param>
+        public ArraySpec(string layoutTexturePath, string meshPath, string bypassDiodesPath)
+        {
+            Strings = new List<CellString>();
+            CellSpec = new CellSpec();
+            BypassDiodeSpec = new DiodeSpec();
+            
+            // Load Array Layout
+            LayoutTexture = Image.Load<Rgba32>(layoutTexturePath);
+            Mesh = LoadMesh(meshPath);
+            LayoutBounds = new BoundsSpec { MinX = -0.115, MaxX = 2.035, MinZ = -0.23, MaxZ = 4.59 };
+            EncapsulationLoss = 0.025;
+            
+            ReadStringsFromColors();
+            
+            // Load Bypass Diodes
+            var text = File.ReadAllText(bypassDiodesPath);
+            var fileModel = JsonSerializer.Deserialize<BypassLayoutFile>(text, _jsonOpts);
+            if (fileModel is null)
+            {
+                throw new InvalidOperationException("Empty or invalid Bypass Diode JSON.");
+            };
+            ImportBypassDiodes(fileModel);
+        }
 
+        public bool RemoveBypassDiode(BypassDiode diode)
+        {
+            bool removed = false;
+            foreach (var str in Strings)
+            {
+                if (str.BypassDiodes.Remove(diode))
+                {
+                    removed = true;
+                    break;
+                } 
+            }
+
+            return removed;
+        }
+        
+        public ArraySpec.BypassDiode AddBypassDiode(CellString cellString, int ix0, int ix1)
+        {
+            if (ix0 < 0 || ix1 < 0)
+            {
+                throw new InvalidOperationException("Cell indices cannot be negative!");
+            }
+
+            var newDiode = new BypassDiode { CellIxs = new Pair<int>(ix0, ix1) };
+
+            return AddBypassDiode(cellString, newDiode);
+        }
+
+        public ArraySpec.BypassDiode AddBypassDiode(CellString cellString, Cell a, Cell b)
+        {
+            int ix0 = cellString.Cells.IndexOf(a);
+            int ix1 = cellString.Cells.IndexOf(b);
+
+            return AddBypassDiode(cellString, ix0, ix1);
+        }
+
+        public BypassDiode AddBypassDiode(CellString cellString, BypassDiode diode)
+        {
+            if (!cellString.BypassDiodes.Remove(diode))
+                cellString.BypassDiodes.Add(diode);
+
+            return diode;
+        }
+        
+        // Need func to add a bypass diode 
+        
+        // Need func to remove a bypass diode
+        
+        private static readonly JsonSerializerOptions _jsonOpts = new()
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        
+        /// <summary>
+        /// Import a set of saved bypass diodes into this ArraySpec.
+        /// </summary>
+        /// <param name="file"></param>
+        public void ImportBypassDiodes(BypassLayoutFile file)
+        {
+            // Bounds-safe: clear & set only what the file provides
+            foreach (var entry in file.Strings)
+            {
+                if (entry.StringIndex < 0 || entry.StringIndex >= Strings.Count) continue;
+                var str = Strings[entry.StringIndex];
+                str.BypassDiodes.Clear();
+
+                int maxIx = str.Cells.Count - 1;
+                foreach (var pair in entry.Diodes)
+                {
+                    if (pair is { Length: 2 })
+                    {
+                        int a = pair[0], b = pair[1];
+                        if (a < 0 || b < 0 || a > b || a > maxIx || b > maxIx) continue;
+                        str.BypassDiodes.Add(new ArraySpec.BypassDiode { CellIxs = new Pair<int>(a, b) });
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Save the current bypass diode configuration to a JSON file. 
+        /// </summary>
+        /// <param name="path"></param>
+        /// <exception cref="InvalidOperationException"></exception>
+        public void ExportBypass(string path)
+        {
+            var fileModel = new BypassLayoutFile { };
+            for (int s = 0; s < Strings.Count; s++)
+            {
+                var str = Strings[s];
+                var entry = new BypassStringEntry { StringIndex = s };
+                foreach (var d in str.BypassDiodes)
+                {
+                    entry.Diodes.Add(new[] { d.CellIxs.First, d.CellIxs.Second });
+                }
+                fileModel.Strings.Add(entry);
+            }
+
+            try
+            {
+                var json = JsonSerializer.Serialize(fileModel, _jsonOpts);
+                File.WriteAllText(path, json);
+            }
+            catch (Exception e)
+            {
+                throw new InvalidOperationException("Could not save bypass diode layout file.");
+            }
+        }
+        
         /// <summary>Shape of the array. Dimensions in meters; +Y is up.</summary>
         public Mesh Mesh { get; set; } = default!;
 
@@ -210,6 +347,30 @@ namespace SSCP.ShellPower
         }
 
         /// <summary>
+        /// Add a Cell to a CellString, removing it from the string it was on before.
+        /// Returns `True` if the cell was added to the string, an `False` if it was already there.
+        /// </summary>
+        public bool AddCellToCellString(Cell cell, CellString editedCellString)
+        {
+            bool addedToCellString = false;
+            if (!editedCellString.Cells.Contains(cell))
+            {
+                editedCellString.Cells.Add(cell);
+                addedToCellString = true;
+            }
+            
+            foreach (var cellStr in Strings)
+            {
+                if (cellStr != editedCellString)
+                {
+                    cellStr.Cells.RemoveAll(candidateCell => editedCellString.Cells.Contains(candidateCell));
+                }
+            }
+            
+            return addedToCellString;
+        }
+
+        /// <summary>
         /// Rebuilds Strings and Cells from the layout image’s colors.
         /// Any opaque non-grayscale pixel is considered a cell texel.
         /// Cells are grouped into strings by (R,G,0) key; per-cell key is (R,G,B).
@@ -266,6 +427,17 @@ namespace SSCP.ShellPower
             {
                 cellStr.Cells.Sort((a, b) => a.Color.B.CompareTo(b.Color.B));
             }
+        }
+
+        public bool SaveArrayTexture(string filename)
+        {
+            if (LayoutTexture != null)
+            {
+                ImageExtensions.Save(LayoutTexture, filename);
+                return true;
+            }
+            
+            return false;
         }
         
         public static Mesh LoadMesh(string path)
