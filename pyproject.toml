@@ -16,5 +16,11 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = ""
 
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "matplotlib>=3.10.8",
+]
+
 [tool.uv]
 package = true
