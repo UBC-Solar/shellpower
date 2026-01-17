@@ -18,6 +18,7 @@ namespace SSCP.ShellPower
             Strings = new List<CellString>();
             CellSpec = new CellSpec();
             BypassDiodeSpec = new DiodeSpec();
+            LoadMPPT();
         }
 
         /// <summary>
@@ -33,6 +34,7 @@ namespace SSCP.ShellPower
             EncapsulationLoss = 0.025;
             
             ReadStringsFromColors();
+            LoadMPPT();
         }
         
         /// <summary>
@@ -63,6 +65,7 @@ namespace SSCP.ShellPower
                 throw new InvalidOperationException("Empty or invalid Bypass Diode JSON.");
             };
             ImportBypassDiodes(fileModel);
+            LoadMPPT();
         }
 
         public bool RemoveBypassDiode(BypassDiode diode)
@@ -118,6 +121,7 @@ namespace SSCP.ShellPower
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
         
+        // todo: probabably should take in a path
         /// <summary>
         /// Import a set of saved bypass diodes into this ArraySpec.
         /// </summary>
@@ -198,6 +202,8 @@ namespace SSCP.ShellPower
         /// <summary>Encapsulation loss (e.g., 0.03 = 3%).</summary>
         public double EncapsulationLoss { get; set; }
 
+        public MPPT ArrayMPPT { get; set; }
+
         // ----------------------- Nested types -----------------------
 
         public class CellString
@@ -207,11 +213,14 @@ namespace SSCP.ShellPower
                 Cells = new List<Cell>();
                 BypassDiodes = new List<BypassDiode>();
                 Name = "NewString";
+                
             }
 
             public List<Cell> Cells { get; }
             public List<BypassDiode> BypassDiodes { get; }
             public string Name { get; set; }
+            
+            // public MPPT StringMPPT { get; set; }
 
             public override string ToString()
             {
@@ -433,6 +442,7 @@ namespace SSCP.ShellPower
         {
             if (LayoutTexture != null)
             {
+                Recolor();
                 ImageExtensions.Save(LayoutTexture, filename);
                 return true;
             }
@@ -454,6 +464,25 @@ namespace SSCP.ShellPower
             var size = mesh.BoundingBox.Max - mesh.BoundingBox.Min;
             if (size.Length() > 1000) mesh = MeshUtils.Scale(mesh, 0.001f);
             return mesh;
+        }
+
+        private void LoadMPPT()
+        {
+            double[,] efficiencyMatrix =
+            {
+                { 0.9265, 0.9573, 0.9723, 0.9772, 0.9785, 0.9784, 0.9782, 0.9768 },
+                { 0.9333, 0.9601, 0.9763, 0.9807, 0.9822, 0.9826, 0.9818, 0.9814 },
+                { 0.9405, 0.9679, 0.9794, 0.9835, 0.9849, 0.9853, 0.9850, 0.9845 },
+                { 0.9489, 0.9738, 0.9823, 0.9858, 0.9872, 0.9876, 0.9873, 0.9867 },
+                { 0.9575, 0.9780, 0.9852, 0.9881, 0.9891, 0.9894, 0.9891, 0.9886 },
+                { 0.9662, 0.9808, 0.9877, 0.9901, 0.9910, 0.9908, 0.9907, 0.9903 },
+                { 0.9748, 0.9857, 0.9905, 0.9922, 0.9925, 0.9924, 0.9920, 0.9917 },
+            };
+            ArrayMPPT = new MPPT(
+                [30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0],
+                [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], 
+                efficiencyMatrix
+            );
         }
     }
 }

@@ -361,12 +361,15 @@ namespace SSCP.ShellPower {
                 // “Noon” pass with explicit sun dir:
                 var noon = await SimSurface.RunOnceExplicitAsync(
                     simInput.Array!,
-                    new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),   // your chosen direction (must be unit length)
+                    new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),   // noon
                     simInput.Irradiance,
                     simInput.IndirectIrradiance,
                     simInput.Temperature);
 
                 // Actual pass using ephemerides from simInput (GetSunDir inside ArraySimulator)
+
+                Debug.WriteLine("Irradiance Is:");
+                Debug.WriteLine(simInput.Irradiance);
                 var simOutput = await SimSurface.RunOnceAsync(simInput);
 
                 double distortion = Math.Abs(noon.ArrayLitArea - simOutput.ArrayArea) / simOutput.ArrayArea;
