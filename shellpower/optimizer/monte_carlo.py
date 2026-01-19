@@ -35,12 +35,15 @@ def get_cell_position(cell) -> tuple[int, int]:
     return min_x, min_y
 
 def neighbours(a_pos, b_pos) -> bool:
-    """Determine if two cells are neighbours of each other"""
+    """Determine if two cells are neighbours of each other
+
+    Distance is measured by taxicab distance to select side-to-side neighbours.
+    """
 
     # min distance between cells in pixels
     r_min = 200
 
-    return (a_pos[0] - b_pos[0]) ** 2 + (a_pos[1] - b_pos[1]) ** 2 <= r_min ** 2
+    return abs(a_pos[0] - b_pos[0]) + abs(a_pos[1] - b_pos[1]) <= r_min
 
 def get_adjacent_cells(array_spec) -> list[tuple]:
     """Determine a list of cells on different strings which are adjacent"""
