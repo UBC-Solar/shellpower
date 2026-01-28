@@ -7,6 +7,8 @@ import datetime
 import random
 
 
+# ======== FUNCTION DEFINITIONS ========
+
 def get_cell_position(cell) -> tuple[int, int]:
     """Determine the coordinates of a cell
 
@@ -101,6 +103,17 @@ def mutate_random(array_spec) -> tuple:
 
     return remove_from_string, add_to_string, cell_to_move
 
+def undo_mutate(array_spec, remove_from_string, cell_to_move):
+    """Undo the action from mutate_random.
+
+    :param array_spec: ArraySpec to mutate.
+    :param remove_from_string: String from which the cell was removed
+    :param cell_to_move: Cell which was moved
+    """
+
+    array_spec.AddCellToCellString(cell_to_move, remove_from_string)
+    array_spec.Recolor()
+
 def mutate_adjacent(array_spec, adjacent_cells: list[tuple]) -> tuple:
     """Move a random cell from one string to an adjacent one. Mutates array_spec.
 
@@ -141,6 +154,8 @@ def score_output(output: ArraySimulatorOutput) -> float:
     return output.WattsOutputByCell
 
 
+# ======== OPTIMIZATION ENTRY POINT ========
+
 if __name__ == "__main__":
 
     # Load default ArraySpec
@@ -165,9 +180,41 @@ if __name__ == "__main__":
     simulation_dir = project_root / "shellpower" / "textures" / timestamp
     simulation_dir.mkdir(parents=True, exist_ok=True)
 
-    texture_path = base_texture_path
+    # Export the starting texture file (saves a copy)
+    texture_path = simulation_dir / "texture_0.png"
+    aspec.SaveArrayTexture(str(texture_path))
 
-    for i in range(5):
+
+    # ======== INITIAL CONFIGURATION SIMULATION ========
+
+    # Evaluate the string
+    print("Simulating performance...")
+    simulator = ArraySimulator()
+    simulator_input = ArraySimulatorInput(
+        **ncm_motorsports_park_config,
+        LayoutTexturePath=texture_path,
+        MeshPath=str(top_shell_model),
+    )
+    output: ArraySimulatorOutput = simulator.simulate(simulator_input)
+
+    # Score the output
+    print(f"Simulated power: {output.WattsOutputByCell} Watts")
+    current_score = score_output(output)
+
+    num_iters = 5  # Increase to a large value for
+    for i in range(num_iters):
+
+        # ======== OPTIMIZATION LOOP ========
+
+        # Mutate the ArraySpec
+        remove_from_string, add_to_string, moved_cell = mutate_adjacent(aspec, adjacent_cells)
+        print("\nNew iteration!")
+        print(f"Moved cell from {remove_from_string.Name} to {add_to_string.Name}")
+
+        # Export the current texture file
+        texture_path = simulation_dir / f"texture_{i + 1}.png"
+        aspec.SaveArrayTexture(str(texture_path))
+
         print(f"Using texture {texture_path}")
 
         # Evaluate the string
@@ -182,12 +229,4 @@ if __name__ == "__main__":
 
         # Score the output
         print(f"Simulated power: {output.WattsOutputByCell} Watts")
-
-        # Mutate the ArraySpec
-        remove_from_string, add_to_string, moved_cell = mutate_adjacent(aspec, adjacent_cells)
-        print("\nNew iteration!")
-        print(f"Moved cell from {remove_from_string.Name} to {add_to_string.Name}")
-
-        # Export the current texture file
-        texture_path = simulation_dir / f"texture_{i}.png"
-        aspec.SaveArrayTexture(str(texture_path))
+        current_score = score_output(output)
