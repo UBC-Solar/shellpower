@@ -5,6 +5,7 @@ from pathlib import Path
 from tqdm import tqdm
 import datetime
 import random
+import csv
 
 
 # ======== FUNCTION DEFINITIONS ========
@@ -158,32 +159,76 @@ def score_output(output: ArraySimulatorOutput) -> float:
 
 if __name__ == "__main__":
 
+    random.seed(0)  # Fix seed for reproducibility
+
+    """
+    Optimization strategy:
+        - start with a default array texture
+        - mutate it by 'flipping' a cell to a neighboring string
+        - evaluate the power produced with the modified texture
+            - If it's better, choose the new one
+            - If it's worse, keep the old one
+            - If they're the same, randomly choose whether to keep or not
+            - TODO: detect when we are at a local max, i.e., any flip makes the performance worse
+                - In this case, do a bunch of random flips to allow for more improvements
+        - save the result in a CSV file which tracks
+                - Model
+                - Texture Path
+                - Simulated Power [W]
+                - Commit Hash
+            in order to allow optimizations to be interrupted and resumed.
+
+    Outputs:
+        - Creates a new timestamped directory in shellpower/shellpower/outputs
+        - The output directory contains
+            - All texture files evaluated
+            - A CSV which tracks the performance of each texture
+    """
+
+
+    # ======== LOAD ARRAYSPEC ========
+
     # Load default ArraySpec
-    project_root = Path(__file__).parent.parent.parent
-    base_texture_path = project_root / "arrays" / "luminos" / "luminos-splines-6-string-no-bypass-rot.png"
-    top_shell_model = project_root / "arrays" / "luminos" / "luminos.stl"
-    bypass_diodes_json = project_root / "shellpower" / "bypass_diodes.json"
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "luminos" / "luminos-splines-6-string-no-bypass-rot.png"
+    TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "luminos" / "luminos.stl"
+    BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
     aspec = Simulation.ArraySpec(
-        str(base_texture_path),
-        str(top_shell_model),
-        str(bypass_diodes_json),
+        str(BASE_TEXTURE_PATH),
+        str(TOP_SHELL_MODEL),
+        str(BYPASS_DIODES_JSON),
     )
 
-    # Determine adjacent cells
+    # Determine adjacent cells - takes a few seconds to run
     print("Determining adjacent cells")
     adjacent_cells: list[tuple] = get_adjacent_cells(aspec)
     print(f"Found {len(adjacent_cells)} adjacent cell pairs!")
 
+
+    # ======== PREPARE OUTPUTS ========
+
     # Create a folder for the outputs
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-    simulation_dir = project_root / "shellpower" / "textures" / timestamp
+    simulation_dir = PROJECT_ROOT / "shellpower" / "outputs" / timestamp
     simulation_dir.mkdir(parents=True, exist_ok=True)
 
     # Export the starting texture file (saves a copy)
     texture_path = simulation_dir / "texture_0.png"
     aspec.SaveArrayTexture(str(texture_path))
 
+    # Create a csv file to track optimization progress
+    results_cols = [
+        "Model",
+        "Texture Path",
+        "Simulated Power[W]",
+        "Score",
+    ]
+    results_csv_path = simulation_dir / "results.csv"
+    with open(results_csv_path, 'w', newline='') as results_csv:
+        writer = csv.DictWriter(results_csv, fieldnames=results_cols)
+        writer.writeheader()
+    print(f"Saving results in {results_csv_path}")
 
     # ======== INITIAL CONFIGURATION SIMULATION ========
 
@@ -193,13 +238,21 @@ if __name__ == "__main__":
     simulator_input = ArraySimulatorInput(
         **ncm_motorsports_park_config,
         LayoutTexturePath=texture_path,
-        MeshPath=str(top_shell_model),
+        MeshPath=str(TOP_SHELL_MODEL),
     )
     output: ArraySimulatorOutput = simulator.simulate(simulator_input)
 
-    # Score the output
+    # Score the output and save to csv
     print(f"Simulated power: {output.WattsOutputByCell} Watts")
     current_score = score_output(output)
+    with open(results_csv_path, 'a', newline='') as results_csv:
+        writer = csv.DictWriter(results_csv, fieldnames=results_cols)
+        writer.writerow({
+            "Model": TOP_SHELL_MODEL,
+            "Texture Path": str(texture_path),
+            "Simulated Power[W]": output.WattsOutputByCell,
+            "Score": current_score,
+        })
 
     num_iters = 5  # Increase to a large value for
     for i in range(num_iters):
@@ -223,10 +276,18 @@ if __name__ == "__main__":
         simulator_input = ArraySimulatorInput(
             **ncm_motorsports_park_config,
             LayoutTexturePath=texture_path,
-            MeshPath=str(top_shell_model),
+            MeshPath=str(TOP_SHELL_MODEL),
         )
         output: ArraySimulatorOutput = simulator.simulate(simulator_input)
 
         # Score the output
         print(f"Simulated power: {output.WattsOutputByCell} Watts")
         current_score = score_output(output)
+        with open(results_csv_path, 'a', newline='') as results_csv:
+            writer = csv.DictWriter(results_csv, fieldnames=results_cols)
+            writer.writerow({
+                "Model": TOP_SHELL_MODEL,
+                "Texture Path": str(texture_path),
+                "Simulated Power[W]": output.WattsOutputByCell,
+                "Score": current_score,
+            })
