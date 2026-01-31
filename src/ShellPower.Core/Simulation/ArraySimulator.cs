@@ -85,11 +85,7 @@ void main()
 
     // Normal in view space (or whatever space uNormalMat represents)
     vec3 n = normalize(aNormal);
-
-    // With sun camera, light direction in view space is +Z (surface->sun)
     vCosRule = dot(n, normalize(uSunDir));
-
-    // Old code used sqrt(dot(n,n))/n.z; for normalized n that's 1/n.z
     float nz = max(n.z, 1e-6);
     vAreaMult = clamp(1.0 / nz, 0.0, 24.0);
 
@@ -723,6 +719,10 @@ private static OpenTK.Mathematics.Matrix4 MakeSunMvp(ArraySpec array, System.Num
                     String = cellStr,
                     Area = cellStr.Cells.Count * cellSpec.Area,
                     WattsOutputIdeal = idealCellPmp * cellStr.Cells.Count,
+                    WattsStringMppElectrical = stringIVTrace.Pmp,
+                    MpptEta = eta,
+                    WattsInMaxDirect = wPerM2Insolation * cellStr.Cells.Count * cellSpec.Area,
+                    WattsInMaxEff = (wPerM2Insolation + wPerM2Indirect) * (1.0 - array.EncapsulationLoss) * cellStr.Cells.Count * cellSpec.Area,
                 };
 
                 outStr.AreaShaded = Math.Max(0.0, outStr.Area - stringLitArea);
