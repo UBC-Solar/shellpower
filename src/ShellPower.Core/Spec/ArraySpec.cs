@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -15,10 +13,7 @@ namespace SSCP.ShellPower
     {
         public ArraySpec()
         {
-            Strings = new List<CellString>();
-            CellSpec = new CellSpec();
-            BypassDiodeSpec = new DiodeSpec();
-            LoadMPPT();
+            Initialize();
         }
 
         /// <summary>
@@ -28,13 +23,10 @@ namespace SSCP.ShellPower
         /// <param name="meshPath"></param>
         public ArraySpec(string layoutTexturePath, string meshPath)
         {
+            Initialize();
+            
             LayoutTexture = Image.Load<Rgba32>(layoutTexturePath);
             Mesh = LoadMesh(meshPath);
-            LayoutBounds = new BoundsSpec { MinX = -0.115, MaxX = 2.035, MinZ = -0.23, MaxZ = 4.59 };
-            EncapsulationLoss = 0.025;
-            
-            ReadStringsFromColors();
-            LoadMPPT();
         }
         
         /// <summary>
@@ -45,16 +37,11 @@ namespace SSCP.ShellPower
         /// <param name="bypassDiodesPath"></param>
         public ArraySpec(string layoutTexturePath, string meshPath, string bypassDiodesPath)
         {
-            Strings = new List<CellString>();
-            CellSpec = new CellSpec();
-            BypassDiodeSpec = new DiodeSpec();
+            Initialize();
             
             // Load Array Layout
             LayoutTexture = Image.Load<Rgba32>(layoutTexturePath);
             Mesh = LoadMesh(meshPath);
-            LayoutBounds = new BoundsSpec { MinX = -0.115, MaxX = 2.035, MinZ = -0.23, MaxZ = 4.59 };
-            EncapsulationLoss = 0.025;
-            
             ReadStringsFromColors();
             
             // Load Bypass Diodes
@@ -65,7 +52,20 @@ namespace SSCP.ShellPower
                 throw new InvalidOperationException("Empty or invalid Bypass Diode JSON.");
             };
             ImportBypassDiodes(fileModel);
+        }
+
+        public void Initialize()
+        {
+            Strings = new List<CellString>();
+            CellSpec = new CellSpec();
+            BypassDiodeSpec = new DiodeSpec();
             LoadMPPT();
+
+            EncapsulationLoss = 0.025;
+            
+            // 85% sure that this doesn't do anything
+            LayoutBounds = new BoundsSpec { MinX = 0, MaxX = 2.0, MinZ = 0, MaxZ = 5.2 };
+            BypassDiodeSpec.VoltageDrop = 0.35;
         }
 
         public bool RemoveBypassDiode(BypassDiode diode)
@@ -197,7 +197,7 @@ namespace SSCP.ShellPower
         public DiodeSpec BypassDiodeSpec { get; set; }
 
         /// <summary>Cells grouped into series strings.</summary>
-        public List<CellString> Strings { get; }
+        public List<CellString> Strings { get; private set; }
 
         /// <summary>Encapsulation loss (e.g., 0.03 = 3%).</summary>
         public double EncapsulationLoss { get; set; }

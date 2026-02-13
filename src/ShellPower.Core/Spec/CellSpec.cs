@@ -1,13 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Diagnostics;
-
-namespace SSCP.ShellPower {
+﻿namespace SSCP.ShellPower {
     public class CellSpec {
         public const double STC_TEMP = 25.0;
         public const double STC_INSOLATION = 1000.0;
+
+        public CellSpec()
+        {
+            IscStc = 6.397;
+            VocStc = 0.732;
+            DIscDT = 0.0029;
+            DVocDT = -0.00174;
+            Area = 0.0155;
+
+            NIdeal = 1.26;
+            SeriesR = 0.003;
+        }
 
         /// <summary>
         /// Open-circuit voltage at Standard Test Conditions.

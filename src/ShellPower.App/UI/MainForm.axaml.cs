@@ -74,29 +74,7 @@ namespace SSCP.ShellPower {
         /// </summary>
         private void InitializeArraySpec() {
             var array = simInput.Array;
-            array.LayoutBounds = new BoundsSpec() {
-                MinX = -0.115,
-                MaxX = 2.035,
-                MinZ = -0.23,
-                MaxZ = 4.59
-            };
             array.LayoutTexture = ArrayModelControl.DEFAULT_TEX; // Avalonia Bitmap equivalent expected in your control
-            //LoadModel(meshFilename);
-            array.EncapsulationLoss = 0.025; // 2.5 %
-
-            // Sunpower C60 Bin I
-            CellSpec cellSpec = simInput.Array.CellSpec;
-            cellSpec.IscStc = 6.27;
-            cellSpec.VocStc = 0.686;
-            cellSpec.DIscDT = -0.0020; // approx, computed
-            cellSpec.DVocDT = -0.0018;
-            cellSpec.Area = 0.015555; // m^2
-            cellSpec.NIdeal = 1.26; // fudge
-            cellSpec.SeriesR = 0.003; // ohms
-
-            // Average bypass diode
-            DiodeSpec diodeSpec = simInput.Array.BypassDiodeSpec;
-            diodeSpec.VoltageDrop = 0.35;
         }
 
         private void InitializeConditions() {
