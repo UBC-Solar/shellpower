@@ -69,7 +69,11 @@ namespace SSCP.ShellPower {
         public double Area { get; set; }
         public double AreaShaded { get; set; }
         public ArraySpec.CellString String { get; set; }
-
+        public double WattsStringMppElectrical { get; set; }  // stringIVTrace.Pmp
+        public double MpptEta { get; set; }                  // eta at (Vmp, Imp)
+        public double WattsInMaxDirect { get; set; }         // wPerM2Insolation * Area
+        public double WattsInMaxEff { get; set; }            // (direct+indirect)*(1-loss)*Area, optional
+        
         public override string ToString() {
             return string.Format("{0}: {1:0.0} W", String, WattsOutput);
         }

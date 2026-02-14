@@ -46,7 +46,7 @@ public sealed class ArraySimComputeSurface : OpenGlControlBase
         return _tcs.Task;
     }
 
-// add these fields
+    // add these fields
     private ArraySimulationStepInput? _pending;
     private (ArraySpec arr, System.Numerics.Vector3 dir, double irr, double indir, double temp)? _explicit;
     private TaskCompletionSource<ArraySimulationStepOutput>? _tcs;

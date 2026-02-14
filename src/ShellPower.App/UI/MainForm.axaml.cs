@@ -74,29 +74,7 @@ namespace SSCP.ShellPower {
         /// </summary>
         private void InitializeArraySpec() {
             var array = simInput.Array;
-            array.LayoutBounds = new BoundsSpec() {
-                MinX = -0.115,
-                MaxX = 2.035,
-                MinZ = -0.23,
-                MaxZ = 4.59
-            };
             array.LayoutTexture = ArrayModelControl.DEFAULT_TEX; // Avalonia Bitmap equivalent expected in your control
-            //LoadModel(meshFilename);
-            array.EncapsulationLoss = 0.025; // 2.5 %
-
-            // Sunpower C60 Bin I
-            CellSpec cellSpec = simInput.Array.CellSpec;
-            cellSpec.IscStc = 6.27;
-            cellSpec.VocStc = 0.686;
-            cellSpec.DIscDT = -0.0020; // approx, computed
-            cellSpec.DVocDT = -0.0018;
-            cellSpec.Area = 0.015555; // m^2
-            cellSpec.NIdeal = 1.26; // fudge
-            cellSpec.SeriesR = 0.003; // ohms
-
-            // Average bypass diode
-            DiodeSpec diodeSpec = simInput.Array.BypassDiodeSpec;
-            diodeSpec.VoltageDrop = 0.35;
         }
 
         private void InitializeConditions() {
@@ -361,12 +339,15 @@ namespace SSCP.ShellPower {
                 // “Noon” pass with explicit sun dir:
                 var noon = await SimSurface.RunOnceExplicitAsync(
                     simInput.Array!,
-                    new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),   // your chosen direction (must be unit length)
+                    new System.Numerics.Vector3(0.1f, 0.995f, 0.0f),   // noon
                     simInput.Irradiance,
                     simInput.IndirectIrradiance,
                     simInput.Temperature);
 
                 // Actual pass using ephemerides from simInput (GetSunDir inside ArraySimulator)
+
+                Debug.WriteLine("Irradiance Is:");
+                Debug.WriteLine(simInput.Irradiance);
                 var simOutput = await SimSurface.RunOnceAsync(simInput);
 
                 double distortion = Math.Abs(noon.ArrayLitArea - simOutput.ArrayArea) / simOutput.ArrayArea;
@@ -374,8 +355,10 @@ namespace SSCP.ShellPower {
                 // UI text
                 string boldLine   = $"{simOutput.WattsOutput:0}W over {simOutput.ArrayArea:0.00}m² cell area";
                 string firstLine  = $", {noon.ArrayLitArea:0.00}m² lit cells{(distortion > 0.01 ? " (MISMATCH)" : "")}, {noon.ArrayLitArea - simOutput.ArrayLitArea:0.00}m² shaded";
-                string secondLine = $"(Power breakdown: {simOutput.WattsInsolation:0}W {simOutput.WattsInsolation / noon.WattsInsolation * 100:0}% in, {simOutput.WattsOutputByCell:0}W {simOutput.WattsOutputByCell / noon.WattsOutputByCell * 100:0}% ideal mppt, {simOutput.WattsOutput:0}W {simOutput.WattsOutput / noon.WattsOutput * 100:0}% output)";
-
+                string secondLine =
+                    $"(Power breakdown: {simOutput.WattsInsolation:0}W in, " +
+                    $"{simOutput.WattsOutputByCell:0}W cell-MPPT ({100*simOutput.WattsOutputByCell/simOutput.WattsInsolation:0}%), " +
+                    $"{simOutput.WattsOutput:0}W delivered ({100*simOutput.WattsOutput/simOutput.WattsInsolation:0}%))";
                 ArrayPowerText.Text = boldLine;
                 ArrayPowerDetails.Text = secondLine;
                 OutputStringsList.ItemsSource = simOutput.Strings; // your array is fine for IList
@@ -402,20 +385,48 @@ namespace SSCP.ShellPower {
             bmp.Save(fs);
         }
 
-        private void OutputStringsList_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
+        private void OutputStringsList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
             if (OutputStringsList.SelectedItem is not ArraySimStringOutput output) return;
 
+            static double SafePct(double num, double den) => den > 0 ? 100.0 * num / den : 0.0;
+
+            double pin = output.WattsIn;                       // (1)
+            double pCell = output.WattsOutputByCell;           // (2)
+            double pStringElec = output.WattsStringMppElectrical; // (3a)
+            double eta = output.MpptEta;                       // converter η at (Vmp,Imp)
+            double pOut = output.WattsOutput;                  // (3b) delivered after converter
+            double pMaxIn = output.WattsInMaxDirect;           // (5) direct*area
+
+            // Requested efficiencies
+            double eff31 = SafePct(pOut, pin);     // (3)/(1)
+            double eff21 = SafePct(pCell, pin);    // (2)/(1)
+            double capture = SafePct(pin, pMaxIn); // (1)/(5)  (the meaningful direction)
+
+            // Useful splits
+            double mismatch = SafePct(pStringElec, pCell);     // string coupling loss
+            double etaPct = 100.0 * eta;
+
             OutputStringName.Text = output.String.ToString();
-            OutputStringInsolation.Text = $"{output.WattsIn:0.0} W";
-            OutputStringPower.Text = $"{output.WattsOutput:0.0} W ({100 * output.WattsOutput / output.WattsOutputIdeal:0.0} %)";
-            OutputStringMPPT.Text = $"{output.WattsOutputByCell:0.0} W ({100 * output.WattsOutputByCell / output.WattsOutputIdeal:0.0} %)";
-            OutputStringFlattened.Text = $"{output.WattsOutputIdeal:0.0} W";
-            OutputStringArea.Text = $"{output.Area:0.000} m^2";
-            OutputStringShaded.Text = $"{output.AreaShaded:0.000} m^2 ({100 * output.AreaShaded / output.Area:0.0} %)";
+
+            OutputStringInsolation.Text = $"{pin:0.0} W";
+            OutputStringPower.Text      = $"{pOut:0.0} W ({eff31:0.0} % of in)";
+            OutputStringMPPT.Text       = $"{pCell:0.0} W ({eff21:0.0} % of in)";
+            OutputStringFlattened.Text  = $"{output.WattsOutputIdeal:0.0} W";
+
+            OutputStringArea.Text   = $"{output.Area:0.000} m^2";
+            OutputStringShaded.Text = $"{output.AreaShaded:0.000} m^2 ({SafePct(output.AreaShaded, output.Area):0.0} %)";
+
+            // New diagnostics
+            OutputStringStringMpp.Text   = $"{pStringElec:0.0} W";
+            OutputStringMpptEta.Text     = $"{etaPct:0.0} %";
+            OutputStringMismatch.Text    = $"{mismatch:0.0} %";
+            OutputStringMaxInDirect.Text = $"{pMaxIn:0.0} W";
+            OutputStringCapture.Text     = $"{capture:0.0} %";
 
             OutputArrayLayout.CellString = output.String;
         }
-
+        
         private async void ShowIVTrace_Click(object? sender, RoutedEventArgs e) {
             if (OutputStringsList.SelectedItem is not ArraySimStringOutput output) {
                 await ShowInfoAsync("No string selected.");
