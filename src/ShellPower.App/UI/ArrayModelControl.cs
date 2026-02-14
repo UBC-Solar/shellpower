@@ -30,7 +30,7 @@ namespace SSCP.ShellPower {
         private bool _mouseRotate = false;
 
         /* view state */
-        private const double INITIAL_ZOOM = 20;
+        private const double INITIAL_ZOOM = 40;
         private double _zoom = INITIAL_ZOOM;                  // meters away from the model
         // private Matrix4 _rotation = Matrix4.CreateRotationX(-PI / 2f); // top-down
 
@@ -57,7 +57,7 @@ namespace SSCP.ShellPower {
                 _sprite = value;
                 if (_sprite is ShadowMeshSprite s) {
                     double arrayMaxDim = (s.BoundingBox.Max - s.BoundingBox.Min).Length();
-                    _zoom = Math.Max(1e-3, arrayMaxDim * 1.8);
+                    _zoom = Math.Max(1e-3, arrayMaxDim * 30.0);
                     Debug.WriteLine($"[ArrayModelControl] Sprite assigned. zoom={_zoom:0.###}, bbox={s.BoundingBox.Min}..{s.BoundingBox.Max}");
                 }
             }
@@ -257,6 +257,8 @@ namespace SSCP.ShellPower {
 
             // Upload an identity uViewProj / uModel so clip-space positions work directly
             var ident = OpenTK.Mathematics.Matrix4.Identity;
+            float zoomScale = (float)(1.0f / 20.0f);
+            ident = Matrix4.CreateScale(zoomScale) * OpenTK.Mathematics.Matrix4.Identity;
             GL.UniformMatrix4(_uViewProj, false, ref ident);
             GL.UniformMatrix4(_uModel, false, ref ident);
             GL.Uniform1(_uMode, 1);
@@ -648,7 +650,9 @@ void main(){
         }
         
         private void SetModelUniform(OpenTK.Mathematics.Vector3 pos) {
-            var m = Matrix4.CreateTranslation(pos);
+            float s = (float)(0.5);
+
+            var m = Matrix4.CreateTranslation(pos) * Matrix4.CreateScale(s);
             GL.UniformMatrix4(_uModel, false, ref m);
         }
 
