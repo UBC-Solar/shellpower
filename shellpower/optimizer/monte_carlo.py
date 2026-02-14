@@ -48,14 +48,11 @@ def neighbours(a_pos, b_pos) -> bool:
 
     return abs(a_pos[0] - b_pos[0]) + abs(a_pos[1] - b_pos[1]) <= r_min
 
-def get_adjacent_cells(array_spec) -> list[tuple]:
-    """Determine a list of cells on different strings which are adjacent"""
+def get_adjacent_cells(cell_properties: dict[object, dict]) -> list[tuple]:
+    """Determine a list of cells on different strings which are adjacent
 
-    cell_properties: dict[object, dict] = {}
-
-    for string in tqdm(array_spec.Strings, desc="Determining cell positions"):
-        for cell in string.Cells:
-            cell_properties[cell] = {"pos": get_cell_position(cell), "string": string}
+    :param cell_properties: Dictionary of cell properties
+    :return: List of tuples of unique adjacent cell object pairs"""
 
     adjacent_cells: list[tuple] = []
 
@@ -115,7 +112,7 @@ def undo_mutate(array_spec, remove_from_string, cell_to_move):
     array_spec.AddCellToCellString(cell_to_move, remove_from_string)
     array_spec.Recolor()
 
-def mutate_adjacent(array_spec, adjacent_cells: list[tuple]) -> tuple:
+def mutate_adjacent(array_spec) -> tuple:
     """Move a random cell from one string to an adjacent one. Mutates array_spec.
 
     :param array_spec: ArraySpec to mutate.
@@ -124,6 +121,7 @@ def mutate_adjacent(array_spec, adjacent_cells: list[tuple]) -> tuple:
         **add_to_string**: String to which the cell was added
         **cell_to_move:** Cell which was moved
     """
+    adjacent_cells: list[tuple] = get_adjacent_cells(cell_properties)
 
     cell_a, cell_b, string_a, string_b = random.choice(adjacent_cells)
 
@@ -154,6 +152,20 @@ def score_output(output: ArraySimulatorOutput) -> float:
     """
     return output.WattsOutputByCell
 
+def get_cell_properties(array_spec) -> dict[object, dict]:
+    """Get a dictionary mapping cell objects to their properties:
+        "pos": (x, y) position from top left
+        "string": string from which the cell was removed
+    :param array_spec: ArraySpec object
+    :return: dictionary of cell properties
+    """
+    cell_properties: dict[object, dict] = {}
+
+    for string in tqdm(array_spec.Strings, desc="Determining cell positions"):
+        for cell in string.Cells:
+            cell_properties[cell] = {"pos": get_cell_position(cell), "string": string}
+
+    return cell_properties
 
 # ======== OPTIMIZATION ENTRY POINT ========
 
@@ -200,11 +212,10 @@ if __name__ == "__main__":
         str(BYPASS_DIODES_JSON),
     )
 
-    # Determine adjacent cells - takes a few seconds to run
-    print("Determining adjacent cells")
-    adjacent_cells: list[tuple] = get_adjacent_cells(aspec)
-    print(f"Found {len(adjacent_cells)} adjacent cell pairs!")
-
+    # Determine cell positions (centroids)
+    # This is needed to calculate adjacency when flipping neighbouring cells.
+    print("Calculating cell locations")
+    cell_properties: dict[object, dict] = get_cell_properties(aspec)
 
     # ======== PREPARE OUTPUTS ========
 
@@ -260,7 +271,7 @@ if __name__ == "__main__":
         # ======== OPTIMIZATION LOOP ========
 
         # Mutate the ArraySpec
-        remove_from_string, add_to_string, moved_cell = mutate_adjacent(aspec, adjacent_cells)
+        remove_from_string, add_to_string, moved_cell = mutate_adjacent(aspec)
         print("\nNew iteration!")
         print(f"Moved cell from {remove_from_string.Name} to {add_to_string.Name}")
 
