@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -5,27 +7,32 @@ namespace SSCP.ShellPower;
 
 public static class SimulationBuilder
 {
+    private static readonly JsonSerializerOptions _jsonOpts = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+    
     public static ArraySimulationStepInput BuildInput(SimulationRequest req)
     {
-        var mesh   = ArraySpec.LoadMesh(req.MeshPath);
+        var mesh = ArraySpec.LoadMesh(req.MeshPath);
         Image<Rgba32> layout = Image.Load<Rgba32>(req.LayoutTexturePath);
 
         var array = new ArraySpec
         {
             Mesh = mesh,
             LayoutTexture = layout,
-            LayoutBounds = req.LayoutBounds ?? new BoundsSpec { MinX=-0.115, MaxX=2.035, MinZ=-0.23, MaxZ=4.59 },
-            EncapsulationLoss = req.EncapsulationLoss ?? 0.025
         };
 
-        if (req.Cell is not null) array.CellSpec = req.Cell;
-        else { array.CellSpec.IscStc=6.27; array.CellSpec.VocStc=0.686; array.CellSpec.DIscDT=-0.0020; array.CellSpec.DVocDT=-0.0018; array.CellSpec.Area=0.015555; array.CellSpec.NIdeal=1.26; array.CellSpec.SeriesR=0.003; }
-
-        if (req.BypassDiode is not null) array.BypassDiodeSpec = req.BypassDiode;
-        else array.BypassDiodeSpec.VoltageDrop = 0.35;
-
         // if you have a bypass-diode file format:
-        // if (!string.IsNullOrWhiteSpace(req.BypassDiodesPath)) BypassDiodesLoader.Apply(array, req.BypassDiodesPath);
+        if (!string.IsNullOrWhiteSpace(req.BypassDiodesPath))
+        {
+            var text = File.ReadAllText(req.BypassDiodesPath);
+            var fileModel = JsonSerializer.Deserialize<BypassLayoutFile>(text, _jsonOpts);
+            if (fileModel is null) throw new InvalidOperationException("Empty or invalid JSON.");
+
+            array.ImportBypassDiodes(fileModel);
+        };
 
         array.ReadStringsFromColors();
 
