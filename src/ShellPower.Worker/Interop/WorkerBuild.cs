@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -5,6 +7,12 @@ namespace SSCP.ShellPower;
 
 public static class SimulationBuilder
 {
+    private static readonly JsonSerializerOptions _jsonOpts = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+    
     public static ArraySimulationStepInput BuildInput(SimulationRequest req)
     {
         var mesh = ArraySpec.LoadMesh(req.MeshPath);
@@ -17,7 +25,14 @@ public static class SimulationBuilder
         };
 
         // if you have a bypass-diode file format:
-        // if (!string.IsNullOrWhiteSpace(req.BypassDiodesPath)) BypassDiodesLoader.Apply(array, req.BypassDiodesPath);
+        if (!string.IsNullOrWhiteSpace(req.BypassDiodesPath))
+        {
+            var text = File.ReadAllText(req.BypassDiodesPath);
+            var fileModel = JsonSerializer.Deserialize<BypassLayoutFile>(text, _jsonOpts);
+            if (fileModel is null) throw new InvalidOperationException("Empty or invalid JSON.");
+
+            array.ImportBypassDiodes(fileModel);
+        };
 
         array.ReadStringsFromColors();
 
