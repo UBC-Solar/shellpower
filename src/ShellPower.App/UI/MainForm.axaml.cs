@@ -130,6 +130,7 @@ namespace SSCP.ShellPower {
             GLView.Sprite = shadowSprite;
             simInput.Array.Mesh = mesh;
             Debug.WriteLine($"[SetModel] Sprite set. tris={mesh.triangles.Length}, bounds={mesh.BoundingBox.Min}..{mesh.BoundingBox.Max}");
+            GLView.SetPendingShadow(shadow, mesh);
             CalculateSimStepGui();
         }
 
@@ -139,6 +140,7 @@ namespace SSCP.ShellPower {
         private void CalculateSimStepGui() {
             if (shadow != null) {
                 UpdateShadowView();
+                GLView.RequestNextFrameRendering();
             }
         }
 
@@ -158,8 +160,8 @@ namespace SSCP.ShellPower {
             var lightDir = CalculateSunDir();
             if (shadow == null) return;
             shadow.Light = new Vector4(lightDir, 0);
-            shadow.ComputeShadows();
-            GLView.RequestNextFrameRendering();
+
+            GLView.RequestShadowRecompute();   // tell GLView to do it in render callback
         }
 
         // -------------------- UI Event Handlers --------------------

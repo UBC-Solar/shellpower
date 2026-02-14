@@ -19,6 +19,9 @@ using OTQ = OpenTK.Mathematics; // (optional alias)
 namespace SSCP.ShellPower {
     public class ArrayModelControl : OpenGlControlBase {
         /* convenience */
+        private readonly object _pendingLock = new();
+        private (Shadow shadow, Mesh mesh)? _pending;
+        
         private const float PI = (float)Math.PI;
 
         /* render stats */
@@ -73,6 +76,13 @@ namespace SSCP.ShellPower {
             // 50% gray, fully opaque
             return new Image<Rgba32>(w, h, new Rgba32(128, 128, 128, 255));
         }
+        
+        public void SetPendingShadow(Shadow shadow, Mesh mesh)
+        {
+            lock (_pendingLock) _pending = (shadow, mesh);
+            RequestNextFrameRendering();
+        }
+
 
         /* render timer (~60 FPS, Avalonia owns swap) */
         private readonly DispatcherTimer _renderTimer;
@@ -245,9 +255,36 @@ namespace SSCP.ShellPower {
             };
         }
         
+        private bool _recomputeShadows;
+
+        public void RequestShadowRecompute()
+        {
+            _recomputeShadows = true;
+            RequestNextFrameRendering();
+        }
+        
         protected override void OnOpenGlRender(GlInterface gl, int framebuffer)
         {
             if (!_glReady) return;
+            
+            (Shadow shadow, Mesh mesh)? pending = null;
+            lock (_pendingLock) { pending = _pending; _pending = null; }
+
+            if (pending is { } p)
+            {
+                // SAFE place to do GL calls:
+                p.shadow.Initialize();                  // if this touches GL, it's now correct
+                var sprite = new ShadowMeshSprite(p.shadow);
+                var center = (p.mesh.BoundingBox.Max + p.mesh.BoundingBox.Min) / 2;
+                sprite.Position = new OpenTK.Mathematics.Vector3(-center.X, -center.Y, -center.Z);
+                Sprite = sprite;
+            }   
+            
+            if (_recomputeShadows && Sprite is ShadowMeshSprite _sms)
+            {
+                _recomputeShadows = false;
+                _sms.Shadow.ComputeShadows();   // now safe if it uses GL
+            }
             
             GL.ClearColor(0.10f, 0.10f, 0.12f, 1f);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
