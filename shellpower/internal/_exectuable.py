@@ -25,7 +25,7 @@ class ShellPowerExecutable:
                 if self._rid.system == "win" and executable_type:
                     executable_name = "ShellPower.Worker.exe"
                 else:
-                    executable_name = "SSCP.ShellPower.Worker"
+                    executable_name = "ShellPower.Worker"
 
                 build_executable = executable_path / executable_name
 

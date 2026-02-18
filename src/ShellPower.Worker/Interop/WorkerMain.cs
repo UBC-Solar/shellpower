@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OpenTK.Graphics.ES11;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.Common;
 using OpenTK.Mathematics;
@@ -33,6 +34,11 @@ internal static class Program
 
             using var window = new GameWindow(gws, nws);
             window.MakeCurrent();
+            GL.Disable(EnableCap.Blend);
+            GL.Enable(EnableCap.DepthTest);
+            GL.DepthFunc(DepthFunction.Lequal);
+            GL.Enable(EnableCap.CullFace);
+            GL.CullFace(CullFaceMode.Back);
 
             // Run sim (Core assumes GL is current on this thread)
             var input = SimulationBuilder.BuildInput(req);
