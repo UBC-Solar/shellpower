@@ -1,30 +1,46 @@
-from shellpower.simulator import ArraySimulatorOutput, ArraySimulatorInput
+import subprocess
+import datetime
+import os
 from shellpower.internal import ShellPowerWorker
-import json, subprocess, sys, datetime
-
+from shellpower.simulator import ArraySimulatorInput, ArraySimulatorOutput
 
 class ArraySimulator:
     def __init__(self):
-        self._executable = ShellPowerWorker()
+        # Finds the path to the ShellPower.Worker binary
+        self.worker_exe = ShellPowerWorker().path
 
     def simulate(self, simulator_input: ArraySimulatorInput) -> ArraySimulatorOutput:
-        proc = subprocess.run(
-            [str(self._executable.path)],
-            input=json.dumps(simulator_input.model_dump()).encode(),
+        # 1. Serialize using Pydantic (handles datetime/path automatically)
+        request_json = simulator_input.model_dump_json()
+
+        # 2. Setup the Environment
+        env = os.environ.copy()
+        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        env["OpenTK_Windowing_GraphicsLibraryFramework_GLFW_PLATFORM"] = "egl"
+
+        # 3. Execute the Worker
+        # We use xvfb-run to provide the virtual frame buffer for OpenGL
+        cmd = ["xvfb-run", "--auto-servernum", str(self.worker_exe)]
+        
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env
         )
 
-        if proc.returncode != 0:
-            print(proc.stderr.decode(), file=sys.stderr)
-            sys.exit(proc.returncode)
+        # 4. Pipe JSON in and capture the response
+        stdout, stderr = process.communicate(input=request_json)
 
-        resp = json.loads(proc.stdout.decode())
+        if process.returncode != 0:
+            # This will now capture actual C# stack traces if they happen!
+            raise RuntimeError(f"C# Worker Error (Exit {process.returncode}):\n{stderr}")
 
-        simulator_output = ArraySimulatorOutput(**resp)
-
-        return simulator_output
-
+        # 5. Parse back into Pydantic Output model
+        from shellpower import ArraySimulatorOutput
+        return ArraySimulatorOutput.model_validate_json(stdout)
 
 if __name__ == "__main__":
     simulator = ArraySimulator()
