@@ -31,3 +31,5 @@ shellpower/outputs
 
 # Pycache
 **/__pycache__/
+
+**/.ipynb_checkpoints/
