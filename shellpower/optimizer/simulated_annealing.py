@@ -59,6 +59,7 @@ class SimulatedAnnealing:
 
     def simulate(self):
 
+        logger.info("Evaluating base config!")
         prev_score = self._minimize_func()
         self.scores.append(prev_score)
 
@@ -92,7 +93,7 @@ class SimulatedAnnealing:
                     )
 
                 logger.info(
-                    f"New config is worse by {updated_score - prev_score}. "
+                    f"New config is worse by {updated_score - prev_score:.4f}. "
                     f"Acceptance probability is {acceptance_probability * 100:.2f}%"
                 )
 
