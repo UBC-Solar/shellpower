@@ -35,8 +35,9 @@ class ArraySimulator:
         stdout, stderr = process.communicate(input=request_json)
 
         if process.returncode != 0:
-            # This will now capture actual C# stack traces if they happen!
-            raise RuntimeError(f"C# Worker Error (Exit {process.returncode}):\n{stderr}")
+            print(f"STDOUT: {stdout}") # See if it printed anything before dying
+            print(f"STDERR: {stderr}") # This is where driver errors live
+            raise RuntimeError(f"C# Worker Error (Exit {process.returncode})")
 
         # 5. Parse back into Pydantic Output model
         from shellpower import ArraySimulatorOutput
