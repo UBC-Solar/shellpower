@@ -59,8 +59,8 @@ def create_gif(
 
 if __name__ == "__main__":
     # CONFIGURATION
-    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_19h40m44s"
-    FPS = 20
+    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_23h19m24s"
+    FPS = 50 # Max allowed: 50FPS
     MAX_W = 512  # Set to None to keep original size
 
     create_gif(FOLDER, fps=FPS, max_width=MAX_W)
