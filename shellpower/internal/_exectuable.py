@@ -59,10 +59,19 @@ class ShellPowerWorker(ShellPowerExecutable):
 class ShellPowerCore(ShellPowerExecutable):
     def __init__(self):
         super().__init__(ShellPowerExecutableType.Core)
-
         from pythonnet import load
 
-        load("coreclr")
+        # Locate the runtimeconfig file
+        # Based on your pathing, it should be in the same folder as the DLL
+        config_path = self._executable_path / "ShellPower.Worker.runtimeconfig.json"
+
+        if not config_path.exists():
+             # Fallback check: sometimes it's named after the project assembly
+             config_path = self._executable_path / "ShellPower.Core.runtimeconfig.json"
+
+        # Explicitly load using the config file
+        load("coreclr", runtime_config=str(config_path))
+
         import clr  # noqa, clr needs to be imported after being loaded
 
         sys.path.append(str(self._executable_path))
