@@ -21,3 +21,13 @@ src/.vs/
 *.gz
 *.pdf
 src/packages
+
+# optimizer outputs
+shellpower/outputs
+
+# IDE folders
+.idea
+.vs
+
+# Pycache
+**/__pycache__/
