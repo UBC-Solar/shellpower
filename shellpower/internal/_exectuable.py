@@ -60,20 +60,22 @@ class ShellPowerCore(ShellPowerExecutable):
     def __init__(self):
         super().__init__(ShellPowerExecutableType.Core)
         from pythonnet import load
+        import os
 
-        # 1. Point to the WORKER'S directory for the config
-        # Because Core (the DLL) needs the runtime context defined by the Worker (the App)
+        # Use the RID determined by your helper class
+        rid_folder = str(self._rid) # e.g., "ubuntu.24.04-x64"
+
         filepath = pathlib.Path(__file__).resolve().absolute()
-        worker_dir = filepath.parent.parent.parent / "src" / "ShellPower.Worker" / "bin" / "Release" / "net9.0" / str(self._rid)
+        # Navigate to the specific RID folder where the actual binaries live
+        bin_dir = filepath.parent.parent.parent / "src" / "ShellPower.Worker" / "bin" / "Release" / "net9.0" / rid_folder
 
-        config_path = worker_dir / "ShellPower.Worker.runtimeconfig.json"
+        config_path = bin_dir / "ShellPower.Worker.runtimeconfig.json"
 
-        # 2. Safety check: If it's not in the RID folder, check the parent net9.0 folder
         if not config_path.exists():
-            config_path = worker_dir.parent / "ShellPower.Worker.runtimeconfig.json"
+            raise FileNotFoundError(f"Critical: .NET config not found at {config_path}. "
+                                    f"Did you run 'dotnet publish -r {rid_folder}'?")
 
-        print(f"DEBUG: Loading .NET via {config_path}") # Verify this path exists!
-        
+        # Load the runtime
         load("coreclr", runtime_config=str(config_path))
 
         import clr  # noqa, clr needs to be imported after being loaded
