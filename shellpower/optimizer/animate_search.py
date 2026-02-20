@@ -13,7 +13,7 @@ def natural_sort_key(filename):
 
 
 def create_gif(
-    folder_path, output_name="texture_animation.gif", fps=10, max_width=None
+    folder_path, output_name="texture_animation.gif", fps=10, max_width=None, output_dir: Path = None
 ):
     base_path = Path(folder_path)
     frame_duration = int(1000 / fps)
@@ -46,8 +46,9 @@ def create_gif(
     print(f"Stitching {len(images)} frames...")
 
     # Note: 'optimize=False' speeds up the save time significantly
+    output_path = output_name if output_dir is None else str(output_dir / output_name)
     images[0].save(
-        output_name,
+        output_path,
         save_all=True,
         append_images=images[1:],
         duration=frame_duration,
@@ -59,8 +60,9 @@ def create_gif(
 
 if __name__ == "__main__":
     # CONFIGURATION
-    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_23h19m24s"
-    FPS = 50 # Max allowed: 50FPS
-    MAX_W = 512  # Set to None to keep original size
+    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_19h40m44s 200iters"
+    OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
+    FPS = 50  # Max allowed: 50FPS
+    MAX_W = 500  # Set to None to keep original size
 
-    create_gif(FOLDER, fps=FPS, max_width=MAX_W)
+    create_gif(FOLDER, fps=FPS, max_width=MAX_W, output_dir=OUTPUT_DIR)
