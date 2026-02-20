@@ -16,9 +16,23 @@ logger = logging.getLogger(__name__)
 
 def run_optimization():
 
-    # File path configs
+    # Optimization configuration
+    RNG_SEED: int = 0
+    NUM_ITERS: int = 200
+    """
+    Higher tempertures increase the probability that a worse mutation will be kept.
+    Temperature T decays over time throughout the simulation.
+    Note that physically, temperature has the same dimension as the objective function:
+        - If a mutation worsens the objective by 0.5T, there is a 61% chance it will be kept.
+        - If a mutation worsens the objective by T, there is a 37% chance it will be kept.
+        - If a mutation worsens the objective by 2T, there is a 14% chance it will be kept.
+    """
+    INIT_TEMP: float = 0.5  # Watts; the score is -power of the whole array
+    MAX_STRING_CELLS: int = 107
+
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
+    # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
+    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_23h19m24s 500iters\texture_500.png"
     TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
@@ -39,20 +53,8 @@ def run_optimization():
 
     logger.info(f"Created output directory at {simulation_dir}")
 
-    # Optimization configuration
-    seed: int = 0
-    num_iters: int = 1
-    """
-    Higher tempertures increase the probability that a worse mutation will be kept.
-    Temperature T decays over time throughout the simulation.
-    Note that physically, temperature has the same dimension as the objective function:
-        - If a mutation worsens the objective by 0.5T, there is a 61% chance it will be kept.
-        - If a mutation worsens the objective by T, there is a 37% chance it will be kept.
-        - If a mutation worsens the objective by 2T, there is a 14% chance it will be kept.
-    """
-    init_temp: float = 0.5  # Watts; the score is -power of the whole array
-    random.seed(seed)
-    logger.info(f"Starting optimization with {num_iters} iterations!")
+    random.seed(RNG_SEED)
+    logger.info(f"Starting optimization with {NUM_ITERS} iterations!")
     start_time = time.perf_counter()  # Performance tracking
 
     # Inswtantiate ArraySpec & Handler
@@ -61,7 +63,7 @@ def run_optimization():
         str(TOP_SHELL_MODEL),
         str(BYPASS_DIODES_JSON),
     )
-    handler: ArrayHandler = ArrayHandler(aspec)
+    handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS)
 
     # Define function to minimize by simulated annealing
     texture_number = 0
@@ -96,8 +98,8 @@ def run_optimization():
         objective_function,
         handler.mutate_adjacent,
         handler.undo_mutate,
-        init_temp,
-        num_iters,
+        INIT_TEMP,
+        NUM_ITERS,
     )
     sa_optimizer.simulate()
 

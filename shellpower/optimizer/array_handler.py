@@ -15,7 +15,7 @@ class ArrayHandler:
     Container class for C# ArraySpec object. Provides necessary methods for optimization of array configuration.
     """
 
-    def __init__(self, array_spec: object, _verbose=True):
+    def __init__(self, array_spec: object, max_string_cells: int):
         """
         Instantiate an ArrayHandler object with a given ArraySpec
 
@@ -23,7 +23,7 @@ class ArrayHandler:
         """
 
         self.aspec: object = array_spec
-        self.verbose: bool = _verbose
+        self.max_string_cells: int = max_string_cells
 
         # FIX 1: Map everything by a stable key (the coordinate tuple)
         # We store the 'real' cell object once to keep it alive and for API calls
@@ -137,7 +137,7 @@ class ArrayHandler:
                             if self.neighbours(pos, other_pos):
                                 adjacent_pairs.append((pos, other_pos))
         return adjacent_pairs
-    
+
     def is_string_connected_without_cell(self, string_obj, pos_to_remove) -> bool:
         """BFS using stable position keys."""
         # Get positions of all cells in string except the one we are moving
@@ -198,19 +198,25 @@ class ArrayHandler:
                 source_string = pos_to_string[from_pos]
                 target_string = pos_to_string[to_pos]
 
-                if self.is_string_connected_without_cell(source_string, from_pos):
-                    # API Call: We grab the 'live' cell object from our registry
-                    cell_to_move = self.cell_registry[from_pos]
+                if not self.is_string_connected_without_cell(source_string, from_pos):
+                    logger.debug("Skipped mutation because it would cause a string to lose continuity")
+                    continue
 
-                    logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}")
-                    self.aspec.AddCellToCellString(cell_to_move, target_string)
-                    self.aspec.Recolor()
+                if len(target_string.Cells) >= self.max_string_cells:
+                    logger.debug(f"Skipped mutation because {target_string.Name} already has "
+                                 f"the maximum cell count of {self.max_string_cells}")
+                    continue
 
-                    self.last_move = (cell_to_move, source_string)
-                    move_found = True
-                    break
+                # API Call: We grab the 'live' cell object from our registry
+                cell_to_move = self.cell_registry[from_pos]
 
-                logger.debug("Skipped mutation because it would cause a string to lose continuity")
+                logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}")
+                self.aspec.AddCellToCellString(cell_to_move, target_string)
+                self.aspec.Recolor()
+
+                self.last_move = (cell_to_move, source_string)
+                move_found = True
+                break
 
             if move_found:
                 break
