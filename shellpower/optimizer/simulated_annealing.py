@@ -1,13 +1,7 @@
-from shellpower import ArraySimulator, ArraySimulatorInput
-from shellpower.optimizer.config import brainerd_afternoon
-from shellpower.simulator.Simulation import Simulation
 from typing import Callable
-from pathlib import Path
-import datetime
 import logging
 import random
 import math
-import csv
 
 
 logger = logging.getLogger(__name__)
@@ -88,7 +82,7 @@ class SimulatedAnnealing:
                     acceptance_probability = math.exp(
                         -(updated_score - prev_score) / temp
                     )
-                    assert acceptance_probability < 1, (
+                    assert acceptance_probability <= 1, (
                         f"Acceptance probability > 1! {prev_score=}, {updated_score=}, {temp=}"
                     )
 
@@ -107,4 +101,3 @@ class SimulatedAnnealing:
                     self._undo_mutate_func()
 
             prev_score = updated_score
-

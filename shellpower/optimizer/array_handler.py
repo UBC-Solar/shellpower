@@ -2,6 +2,7 @@ from shellpower import ArraySimulator, ArraySimulatorInput
 from collections import defaultdict
 from pathlib import Path
 from tqdm import tqdm
+import collections
 import logging
 import random
 
@@ -24,16 +25,26 @@ class ArrayHandler:
         self.aspec: object = array_spec
         self.verbose: bool = _verbose
 
+        # FIX 1: Map everything by a stable key (the coordinate tuple)
+        # We store the 'real' cell object once to keep it alive and for API calls
         logger.info("Computing cell positions...")
-        self.cell_positions: dict[object, tuple[int, int]] = (
-            self.compute_cell_positions()
-        )
+        self.cell_registry = {}  # pos_key -> cell_object
+        self.cell_positions = {} # cell_object_id -> pos_key (for internal lookup)
 
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos = self.get_cell_position(cell)
+                self.cell_registry[pos] = cell 
+                # We use the position as the absolute source of truth
+
+        # FIX 2: Compute adjacency based on the position keys
         logger.info("Computing geometric adjacency...")
-        self.geometric_pairs: list[tuple[object, object]] = (
-            self.compute_geometric_adjacency()
-        )
-        logger.info(f"Found {len(self.geometric_pairs)} adjacent geometric pairs.")
+        self.geometric_pairs = self.compute_geometric_adjacency()
+
+        self.adj_lookup = defaultdict(list)
+        for a_pos, b_pos in self.geometric_pairs:
+            self.adj_lookup[a_pos].append(b_pos)
+            self.adj_lookup[b_pos].append(a_pos)
 
         self._simulator = ArraySimulator()
 
@@ -106,86 +117,106 @@ class ArrayHandler:
 
         :return: List of adjacent cell pairs [(cell_a, cell_b), ...]
         """
+        # Uses the registry keys (positions) to find neighbors
         bin_size = 200
-        grid: dict[tuple, list[object]] = defaultdict(list)
+        grid = defaultdict(list)
+        all_positions = list(self.cell_registry.keys())
 
-        # Spatial hash
-        for cell, (x, y) in self.cell_positions.items():
-            grid[(x // bin_size, y // bin_size)].append(cell)
+        for pos in all_positions:
+            grid[(pos[0] // bin_size, pos[1] // bin_size)].append(pos)
 
         adjacent_pairs = []
-
-        for cell, (x, y) in self.cell_positions.items():
-            gx, gy = x // bin_size, y // bin_size
-
+        for pos in all_positions:
+            gx, gy = pos[0] // bin_size, pos[1] // bin_size
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
-                    for other in grid.get((gx + dx, gy + dy), []):
-                        if other is cell:
-                            continue
-                        if id(cell) < id(other):
-                            continue
-                        if self.neighbours((x, y), self.cell_positions[other]):
-                            adjacent_pairs.append((cell, other))
-
+                    for other_pos in grid.get((gx + dx, gy + dy), []):
+                        if pos == other_pos: continue
+                        # Use tuple comparison for a stable sort to avoid double pairs
+                        if pos < other_pos:
+                            if self.neighbours(pos, other_pos):
+                                adjacent_pairs.append((pos, other_pos))
         return adjacent_pairs
+    
+    def is_string_connected_without_cell(self, string_obj, pos_to_remove) -> bool:
+        """BFS using stable position keys."""
+        # Get positions of all cells in string except the one we are moving
+        remaining_pos = [self.get_cell_position(c) for c in string_obj.Cells]
+        remaining_pos = [p for p in remaining_pos if p != pos_to_remove]
+
+        if not remaining_pos:
+            return True
+
+        remaining_set = set(remaining_pos)
+        start_node = remaining_pos[0]
+        visited = {start_node}
+        queue = collections.deque([start_node])
+
+        while queue:
+            curr = queue.popleft()
+            for neighbor_pos in self.adj_lookup[curr]:
+                if neighbor_pos in remaining_set and neighbor_pos not in visited:
+                    visited.add(neighbor_pos)
+                    queue.append(neighbor_pos)
+
+        return len(visited) == len(remaining_set)
 
     # ============================================================
     # ARRAY MANIPULATION
     # ============================================================
 
     def build_cell_to_string_map(self) -> dict:
-        """
-        Build a mapping from each cell to its current string.
-
-        This reflects dynamic string membership and must be rebuilt
-        after each mutation.
-
-        :return: Dict mapping cell -> string
-        """
+        """Returns a mapping of position_tuple -> string_object."""
         mapping = {}
         for string in self.aspec.Strings:
             for cell in string.Cells:
-                mapping[cell] = string
+                pos = self.get_cell_position(cell)
+                mapping[pos] = string
         return mapping
 
     def mutate_adjacent(self) -> None:
         """
-        Move a random cell to a neighboring string.
-
-        Only adjacent cells belonging to different strings are considered.
-        Geometric adjacency is precomputed; string membership is checked dynamically.
-
-        :return: (remove_from_string, add_to_string, moved_cell)
+        Move a random cell to a neighboring string, ensuring the source string
+        is not split into two disconnected components.
         """
-        cell_to_string = self.build_cell_to_string_map()
+        pos_to_string = self.build_cell_to_string_map()
 
         valid_pairs = [
-            (a, b)
-            for (a, b) in self.geometric_pairs
-            if cell_to_string[a] != cell_to_string[b]
+            (a_pos, b_pos)
+            for (a_pos, b_pos) in self.geometric_pairs
+            if pos_to_string[a_pos].Name != pos_to_string[b_pos].Name # Compare by Name/ID
         ]
 
         if not valid_pairs:
-            raise RuntimeError("No adjacent cross-string cell pair found.")
+            return
 
-        cell_a, cell_b = random.choice(valid_pairs)
+        random.shuffle(valid_pairs)
 
-        if random.getrandbits(1):
-            cell_to_move = cell_a
-            remove_from_string = cell_to_string[cell_a]
-            add_to_string = cell_to_string[cell_b]
-        else:
-            cell_to_move = cell_b
-            remove_from_string = cell_to_string[cell_b]
-            add_to_string = cell_to_string[cell_a]
+        move_found = False
+        for a_pos, b_pos in valid_pairs:
+            for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
+                source_string = pos_to_string[from_pos]
+                target_string = pos_to_string[to_pos]
 
-        self.aspec.AddCellToCellString(cell_to_move, add_to_string)
-        self.aspec.Recolor()
+                if self.is_string_connected_without_cell(source_string, from_pos):
+                    # API Call: We grab the 'live' cell object from our registry
+                    cell_to_move = self.cell_registry[from_pos]
 
-        self.last_add_to_string = add_to_string
-        self.last_remove_from_string = remove_from_string
-        self.last_cell_to_move = cell_to_move
+                    logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}")
+                    self.aspec.AddCellToCellString(cell_to_move, target_string)
+                    self.aspec.Recolor()
+
+                    self.last_move = (cell_to_move, source_string)
+                    move_found = True
+                    break
+
+                logger.debug("Skipped mutation because it would cause a string to lose continuity")
+
+            if move_found:
+                break
+
+        if not move_found:
+            logger.warning("No valid mutation found that preserves string continuity.")
 
     def undo_mutate(self):
         """
@@ -195,7 +226,7 @@ class ArrayHandler:
         :param cell_to_move: Cell to restore
         """
         self.aspec.AddCellToCellString(
-            self.last_cell_to_move, self.last_remove_from_string
+            *self.last_move
         )
         self.aspec.Recolor()
 
