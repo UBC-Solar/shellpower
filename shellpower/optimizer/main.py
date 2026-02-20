@@ -8,23 +8,40 @@ from pathlib import Path
 import datetime
 import logging
 import random
-import pickle
 import time
+
 
 logger = logging.getLogger(__name__)
 
 
-def setup_logging():
+def run_optimization():
+
+    # File path configs
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
+    TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
+    BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
+
+    # Create output directory
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+    simulation_dir = PROJECT_ROOT / "shellpower" / "outputs" / timestamp
+    simulation_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set up logging
+    log_file_path: Path = simulation_dir / "optimization_log.txt"
     logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(str(log_file_path)),
+            logging.StreamHandler()
+        ]
     )
 
+    logger.info(f"Created output directory at {simulation_dir}")
 
-def run_optimization():
     # Optimization configuration
     seed: int = 0
-    num_iters: int = 500
-
+    num_iters: int = 1
     """
     Higher tempertures increase the probability that a worse mutation will be kept.
     Temperature T decays over time throughout the simulation.
@@ -34,24 +51,11 @@ def run_optimization():
         - If a mutation worsens the objective by 2T, there is a 14% chance it will be kept.
     """
     init_temp: float = 0.5  # Watts; the score is -power of the whole array
-
     random.seed(seed)
     logger.info(f"Starting optimization with {num_iters} iterations!")
-
     start_time = time.perf_counter()  # Performance tracking
 
-    PROJECT_ROOT = Path(__file__).parent.parent.parent
-    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
-    # BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_19h40m44s\texture_200.png"
-    TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
-    BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
-
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-    simulation_dir = PROJECT_ROOT / "shellpower" / "outputs" / timestamp
-    simulation_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Created output directory at {simulation_dir}")
-
-    # Load ArraySpec
+    # Inswtantiate ArraySpec & Handler
     aspec: object = Simulation.ArraySpec(
         str(BASE_TEXTURE_PATH),
         str(TOP_SHELL_MODEL),
@@ -59,8 +63,8 @@ def run_optimization():
     )
     handler: ArrayHandler = ArrayHandler(aspec)
 
+    # Define function to minimize by simulated annealing
     texture_number = 0
-
     def objective_function() -> float:
         nonlocal texture_number
         iter_start = time.perf_counter()
@@ -87,6 +91,7 @@ def run_optimization():
 
         return -power
 
+    # Run simulated annealing optimization
     sa_optimizer: SimulatedAnnealing = SimulatedAnnealing(
         objective_function,
         handler.mutate_adjacent,
@@ -94,13 +99,13 @@ def run_optimization():
         init_temp,
         num_iters,
     )
-
     sa_optimizer.simulate()
 
+    # Log performance
     total_duration = time.perf_counter() - start_time
     logger.info(f"Simulated annealing complete in {total_duration:.2f} seconds!")
 
-    # Plotting
+    # Plot objective over time
     plt.plot(sa_optimizer.scores)
     plt.title("Simulated Annealing Score vs. Iteration Number")
     plt.xlabel("Iteration number")
@@ -110,5 +115,4 @@ def run_optimization():
 
 
 if __name__ == "__main__":
-    setup_logging()
     run_optimization()
