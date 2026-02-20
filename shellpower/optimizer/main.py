@@ -31,8 +31,7 @@ def run_optimization():
     MAX_STRING_CELLS: int = 107
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
-    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_23h19m24s 500iters\texture_500.png"
+    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
     TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
