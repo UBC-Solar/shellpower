@@ -29,5 +29,4 @@ public sealed class SimulationResponse
     public required double WattsInsolation { get; init; }
     public required double WattsOutputByCell { get; init; }
     public required double WattsOutput { get; init; }
-    public ArraySimStringOutput[]? Strings { get; init; }
 }

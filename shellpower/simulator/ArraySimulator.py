@@ -1,35 +1,23 @@
 from shellpower.simulator import ArraySimulatorOutput, ArraySimulatorInput
+from shellpower.simulator.persistent import ShellPowerPersistentWorker
 from shellpower.internal import ShellPowerWorker
-import json, subprocess, sys, datetime
+import datetime
 
 
 class ArraySimulator:
     def __init__(self):
         self._executable = ShellPowerWorker()
+        self._worker = ShellPowerPersistentWorker(str(self._executable.path))
 
     def simulate(self, simulator_input: ArraySimulatorInput) -> ArraySimulatorOutput:
-        proc = subprocess.run(
-            [str(self._executable.path)],
-            input=json.dumps(simulator_input.model_dump()).encode(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-
-        if proc.returncode != 0:
-            print(proc.stderr.decode(), file=sys.stderr)
-            sys.exit(proc.returncode)
-
-        resp = json.loads(proc.stdout.decode())
-
-        simulator_output = ArraySimulatorOutput(**resp)
-
-        return simulator_output
+        resp = self._worker.call(simulator_input.model_dump())
+        return ArraySimulatorOutput(**resp)
 
 
 if __name__ == "__main__":
     simulator = ArraySimulator()
 
-    simulator_input = ArraySimulatorInput(**{"MeshPath": "./../arrays/luminos/luminos.stl",
+    sim_input = ArraySimulatorInput(**{"MeshPath": "./../arrays/luminos/luminos.stl",
          "LayoutTexturePath": "./../arrays/luminos/luminos-splines-6-string-no-bypass-rot.png",
          "Latitude": -23.7,
          "Longitude": 133.8,
@@ -41,6 +29,6 @@ if __name__ == "__main__":
          "DiffuseIrradianceWm2": 70.0
     })
 
-    output = simulator.simulate(simulator_input)
+    output = simulator.simulate(sim_input)
 
     print(output.WattsOutputByCell)

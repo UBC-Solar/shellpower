@@ -56,7 +56,6 @@ public static class SimulationBuilder
             ArrayLitArea = s.ArrayLitArea,
             WattsInsolation = s.WattsInsolation,
             WattsOutputByCell = s.WattsOutputByCell,
-            WattsOutput = s.WattsOutput,
-            Strings = s.Strings
+            WattsOutput = s.WattsOutput
         };
 }
