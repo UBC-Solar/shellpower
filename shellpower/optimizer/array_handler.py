@@ -46,6 +46,14 @@ class ArrayHandler:
             self.adj_lookup[a_pos].append(b_pos)
             self.adj_lookup[b_pos].append(a_pos)
 
+        # NEW: Initialize the persistent map
+        logger.info("Initializing cell-to-string lookup...")
+        self.pos_to_string = {}
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos = self.get_cell_position(cell)
+                self.pos_to_string[pos] = string
+
         self._simulator = ArraySimulator()
 
     # ============================================================
@@ -179,12 +187,11 @@ class ArrayHandler:
         Move a random cell to a neighboring string, ensuring the source string
         is not split into two disconnected components.
         """
-        pos_to_string = self.build_cell_to_string_map()
-
+        logger.debug("Building neighbouring cell pair list...")
         valid_pairs = [
             (a_pos, b_pos)
             for (a_pos, b_pos) in self.geometric_pairs
-            if pos_to_string[a_pos].Name != pos_to_string[b_pos].Name # Compare by Name/ID
+            if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
         ]
 
         if not valid_pairs:
@@ -195,13 +202,15 @@ class ArrayHandler:
         move_found = False
         for a_pos, b_pos in valid_pairs:
             for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
-                source_string = pos_to_string[from_pos]
-                target_string = pos_to_string[to_pos]
+                source_string = self.pos_to_string[from_pos]
+                target_string = self.pos_to_string[to_pos]
 
+                logger.debug("Ensuring mutation maintains continuity...")
                 if not self.is_string_connected_without_cell(source_string, from_pos):
                     logger.debug("Skipped mutation because it would cause a string to lose continuity")
                     continue
 
+                logger.debug("Ensuring mutation doesn't exceed max string size...")
                 if len(target_string.Cells) >= self.max_string_cells:
                     logger.debug(f"Skipped mutation because {target_string.Name} already has "
                                  f"the maximum cell count of {self.max_string_cells}")
@@ -209,12 +218,10 @@ class ArrayHandler:
 
                 # API Call: We grab the 'live' cell object from our registry
                 cell_to_move = self.cell_registry[from_pos]
-
-                logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}")
-                self.aspec.AddCellToCellString(cell_to_move, target_string)
-                self.aspec.Recolor()
+                logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
 
                 self.last_move = (cell_to_move, source_string)
+                self._update_cell_membership(cell_to_move, target_string)
                 move_found = True
                 break
 
@@ -231,10 +238,8 @@ class ArrayHandler:
         :param remove_from_string: Original string
         :param cell_to_move: Cell to restore
         """
-        self.aspec.AddCellToCellString(
-            *self.last_move
-        )
-        self.aspec.Recolor()
+        cell_to_move, original_string = self.last_move
+        self._update_cell_membership(cell_to_move, original_string)
 
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
@@ -259,3 +264,20 @@ class ArrayHandler:
         output = self._simulator.simulate(input)
 
         return output.WattsOutput
+
+    # ============================================================
+    # STATE MANAGEMENT (INTERNAL)
+    # ============================================================
+
+    def _update_cell_membership(self, cell: object, target_string: object) -> None:
+        """
+        Centralized method to handle cell movement. 
+        Updates the internal cache, the C# ArraySpec, and triggers recoloring.
+        """
+        # 1. Update internal persistent map
+        pos = self.get_cell_position(cell)
+        self.pos_to_string[pos] = target_string
+
+        # 2. Update the C# API
+        self.aspec.AddCellToCellString(cell, target_string)
+        self.aspec.Recolor()

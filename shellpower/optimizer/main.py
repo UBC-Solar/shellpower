@@ -14,11 +14,22 @@ import time
 logger = logging.getLogger(__name__)
 
 
+# autoclicker shenanigans
+import win32gui
+import win32con
+def try_click_window(title: str):
+    hwnd = win32gui.FindWindow(None, title)
+    if hwnd == 0:
+        logger.warning(f"Window '{title}' not found")
+    else:
+        win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, 0)
+
+
 def run_optimization():
 
     # Optimization configuration
     RNG_SEED: int = 0
-    NUM_ITERS: int = 200
+    NUM_ITERS: int = 1000
     """
     Higher tempertures increase the probability that a worse mutation will be kept.
     Temperature T decays over time throughout the simulation.
@@ -49,6 +60,9 @@ def run_optimization():
             logging.StreamHandler()
         ]
     )
+    # Silence noisy libs
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
 
     logger.info(f"Created output directory at {simulation_dir}")
 
@@ -70,7 +84,12 @@ def run_optimization():
         nonlocal texture_number
         iter_start = time.perf_counter()
 
+        # DIRTY FIX
+        # On my desktop PC, it slows down greatly (0.7s -> 9s) per run when the window hasn't been clicked in ~5s
+        try_click_window("OpenTK Window")
+
         # 1. Save the current ArraySpec
+        logger.debug("Exporting the current texture...")
         texture_path = simulation_dir / f"texture_{texture_number}.png"
         handler.save_texture(texture_path)
         texture_number += 1
@@ -83,6 +102,7 @@ def run_optimization():
         )
 
         # 3. Compute the value to be minimized
+        logger.debug("Simulating power...")
         power = handler.get_watts(simulator_input)
 
         iter_duration = time.perf_counter() - iter_start

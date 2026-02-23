@@ -5,8 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.10.8",
+    "pyautogui>=0.9.54",
     "pydantic>=2.12.1",
     "pythonnet>=3.0.5",
+    "pywin32>=311",
 ]
 
 [build-system]
@@ -20,6 +23,7 @@ module-root = ""
 dev = [
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.8",
+    "pandas>=3.0.1",
     "pillow>=12.1.0",
     "tdqm>=0.0.1",
 ]
