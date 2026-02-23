@@ -68,6 +68,11 @@ def run_optimization():
 
     random.seed(RNG_SEED)
     logger.info(f"Starting optimization with {NUM_ITERS} iterations!")
+    logger.info(f"Starting texture: {BASE_TEXTURE_PATH}")
+    logger.info(f"Top shell model: {TOP_SHELL_MODEL}")
+    logger.info(f"Initial temperature: {INIT_TEMP} W")
+    logger.info(f"String max size: {MAX_STRING_CELLS} cells")
+
     start_time = time.perf_counter()  # Performance tracking
 
     # Inswtantiate ArraySpec & Handler
