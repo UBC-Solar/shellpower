@@ -205,15 +205,15 @@ class ArrayHandler:
                 source_string = self.pos_to_string[from_pos]
                 target_string = self.pos_to_string[to_pos]
 
-                logger.debug("Ensuring mutation maintains continuity...")
-                if not self.is_string_connected_without_cell(source_string, from_pos):
-                    logger.debug("Skipped mutation because it would cause a string to lose continuity")
-                    continue
-
                 logger.debug("Ensuring mutation doesn't exceed max string size...")
                 if len(target_string.Cells) >= self.max_string_cells:
                     logger.debug(f"Skipped mutation because {target_string.Name} already has "
                                  f"the maximum cell count of {self.max_string_cells}")
+                    continue
+
+                logger.debug("Ensuring mutation maintains continuity...")
+                if not self.is_string_connected_without_cell(source_string, from_pos):
+                    logger.debug("Skipped mutation because it would cause a string to lose continuity")
                     continue
 
                 # API Call: We grab the 'live' cell object from our registry
