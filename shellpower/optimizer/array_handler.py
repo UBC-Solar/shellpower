@@ -302,27 +302,6 @@ class ArrayHandler:
             if not move_found:
                 logger.warning("No valid mutation found that preserves string continuity.")
 
-    def undo_mutate(self):
-        """
-        Undo a previous mutation by restoring a cell to its original string.
-
-        :param remove_from_string: Original string
-        :param cell_to_move: Cell to restore
-        """
-        cell_to_move, original_string = self.last_move
-        self._update_cell_membership(cell_to_move, original_string)
-
-    def _swap_cell_string(self, from_pos, source_string, target_string) -> None:
-        """
-        Move the cell at position `from_pos` from `source_string` to `target_string`.
-        """
-        # Get reference to cell
-        cell_to_move = self.cell_registry[from_pos]
-        logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
-
-        self.last_move = (cell_to_move, source_string)
-        self._update_cell_membership(cell_to_move, target_string)
-
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
     # ============================================================
@@ -351,15 +330,44 @@ class ArrayHandler:
     # STATE MANAGEMENT (INTERNAL)
     # ============================================================
 
-    def _update_cell_membership(self, cell: object, target_string: object) -> None:
+    def _update_cell_membership(self, cell_pos: point, source_string: object, target_string: object) -> None:
         """
-        Centralized method to handle cell movement. 
-        Updates the internal cache, the C# ArraySpec, and triggers recoloring.
-        """
-        # 1. Update internal persistent map
-        pos = self.get_cell_position(cell)
-        self.pos_to_string[pos] = target_string
+        Move the cell at position `from_pos` from `source_string` to `target_string`.
 
-        # 2. Update the C# API
-        self.aspec.AddCellToCellString(cell, target_string)
+        Centralized method to handle cell movement. 
+        Updates the internal cache, movement stack, the C# ArraySpec, and triggers recoloring.
+        """
+
+        logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
+
+        # 1. Update the cell movement stack
+        self._mutation_stack.append((cell_pos, source_string, target_string))
+
+        # 2. Update internal persistent map
+        self.pos_to_string[cell_pos] = target_string
+
+        # 3. Update the C# API
+        cell_to_move = self.cell_registry[cell_pos]
+        self.aspec.AddCellToCellString(cell_to_move, target_string)
+        self.aspec.Recolor()
+
+    def undo_mutate(self):
+        """
+        Undo a the last mutation by restoring a cell to the string it was previously on.
+
+        The ArrayHandler manages a stack of cell movements, so undo_mutate can be chained.
+
+        :param remove_from_string: Original string
+        :param cell_to_move: Cell to restore
+        """
+
+        # 1. Update and query from the cell movement stack
+        cell_pos, move_source, move_target = self._mutation_stack.pop()
+
+        # 2. Update internal persistent map
+        self.pos_to_string[cell_pos] = move_source
+
+        # 3. Update the C# API
+        cell_to_move = self.cell_registry[cell_pos]
+        self.aspec.AddCellToCellString(cell_to_move, move_source)
         self.aspec.Recolor()
