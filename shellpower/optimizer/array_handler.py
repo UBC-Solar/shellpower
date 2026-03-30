@@ -9,6 +9,7 @@ import random
 
 logger = logging.getLogger(__name__)
 
+point = tuple[int, int]
 
 class ArrayHandler:
     """
@@ -25,36 +26,26 @@ class ArrayHandler:
         self.aspec: object = array_spec
         self.max_string_cells: int = max_string_cells
 
-        # FIX 1: Map everything by a stable key (the coordinate tuple)
-        # We store the 'real' cell object once to keep it alive and for API calls
         logger.info("Computing cell positions...")
-        self.cell_registry = {}  # pos_key -> cell_object
-        self.cell_positions = {} # cell_object_id -> pos_key (for internal lookup)
+        self.cell_registry: dict[point, object] = self.build_cell_pos_to_obj_map()  # pos_key -> cell_object
 
-        for string in self.aspec.Strings:
-            for cell in string.Cells:
-                pos = self.get_cell_position(cell)
-                self.cell_registry[pos] = cell 
-                # We use the position as the absolute source of truth
-
-        # FIX 2: Compute adjacency based on the position keys
+        # Compute adjacency based on the position keys
         logger.info("Computing geometric adjacency...")
-        self.geometric_pairs = self.compute_geometric_adjacency()
+        self.geometric_pairs: list[tuple[object, object]] = self.compute_geometric_adjacency()
 
-        self.adj_lookup = defaultdict(list)
+        self.adj_lookup: dict[point, list[point]] = defaultdict(list)
         for a_pos, b_pos in self.geometric_pairs:
             self.adj_lookup[a_pos].append(b_pos)
             self.adj_lookup[b_pos].append(a_pos)
 
-        # NEW: Initialize the persistent map
+        # Persistent cell-string lookup
         logger.info("Initializing cell-to-string lookup...")
-        self.pos_to_string = {}
-        for string in self.aspec.Strings:
-            for cell in string.Cells:
-                pos = self.get_cell_position(cell)
-                self.pos_to_string[pos] = string
+        self.pos_to_string: dict[point, object] = self.build_cell_to_string_map()
 
         self._simulator = ArraySimulator()
+
+        # List of mutations of the form (cell_pos, string_from, string_to)
+        self._mutation_stack: list[tuple[point, object, object]]
 
     # ============================================================
     # GEOMETRY
@@ -173,13 +164,23 @@ class ArrayHandler:
     # ARRAY MANIPULATION
     # ============================================================
 
-    def build_cell_to_string_map(self) -> dict:
+    def build_cell_to_string_map(self) -> dict[point, object]:
         """Returns a mapping of position_tuple -> string_object."""
         mapping = {}
         for string in self.aspec.Strings:
             for cell in string.Cells:
                 pos = self.get_cell_position(cell)
                 mapping[pos] = string
+        return mapping
+
+    def build_cell_pos_to_obj_map(self) -> dict[point, object]:
+        """Returns a mapping of position_tuple -> cell_object."""
+        mapping = {}
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos: point = self.get_cell_position(cell)
+                mapping[pos] = cell 
+                # We use the position as the absolute source of truth
         return mapping
 
     def mutate_adjacent(self) -> None:
@@ -265,7 +266,7 @@ class ArrayHandler:
             """
 
             num_attempts = 10
-            for i in num_attempts:
+            for i in range(num_attempts):
                 try:
                     from_pos_1, to_pos_1, from_pos_2, to_pos_2 = self._find_cell_swap_pair()
                     break
