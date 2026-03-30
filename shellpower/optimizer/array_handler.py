@@ -211,17 +211,8 @@ class ArrayHandler:
                                  f"the maximum cell count of {self.max_string_cells}")
                     continue
 
-                logger.debug("Ensuring mutation maintains continuity...")
-                if not self.is_string_connected_without_cell(source_string, from_pos):
-                    logger.debug("Skipped mutation because it would cause a string to lose continuity")
-                    continue
+                self._swap_cell_string(from_pos, source_string, target_string)
 
-                # API Call: We grab the 'live' cell object from our registry
-                cell_to_move = self.cell_registry[from_pos]
-                logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
-
-                self.last_move = (cell_to_move, source_string)
-                self._update_cell_membership(cell_to_move, target_string)
                 move_found = True
                 break
 
@@ -230,6 +221,85 @@ class ArrayHandler:
 
         if not move_found:
             logger.warning("No valid mutation found that preserves string continuity.")
+
+    def _find_cell_swap_pair(self):
+        logger.debug("Building neighbouring cell pair list...")
+        valid_pairs = [
+            (a_pos, b_pos)
+            for (a_pos, b_pos) in self.geometric_pairs
+            if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
+        ]
+        random.shuffle(valid_pairs)
+
+        # Choose the string pair for cell swap 1 (cell goes from a to b)
+        from_pos_1, to_pos_1 = valid_pairs[0]
+        string_a_1 = self.pos_to_string[from_pos_1].Name
+        string_b_1 = self.pos_to_string[to_pos_1].Name
+
+        # Look for a second pair with the same two strings
+        from_pos_2 = None
+        to_pos_2 = None
+        for pos_1, pos_2 in valid_pairs[1:]: # Don't duplicate the first pair, which we have already selected
+            string_a_2 = self.pos_to_string[pos_1].Name
+            string_b_2 = self.pos_to_string[pos_2].Name
+
+            # Make sure the pair for cell swap 2 is from b to a
+            if (string_a_2 == string_a_1) and (string_b_2 == string_b_1):
+                from_pos_2 = pos_1
+                to_pos_2 = pos_2
+                break
+            if (string_a_2 == string_b_1) and (string_b_2 == string_a_1):
+                # a and b are swapped!
+                from_pos_2 = pos_2
+                to_pos_2 = pos_1
+                break
+
+        if None in (from_pos_2, to_pos_2):
+            raise ValueError("Failed to find cell swap pair!")
+
+        return from_pos_1, to_pos_1, from_pos_2, to_pos_2
+
+    def dual_mutate_adjacent(self) -> None:
+            """
+            Choose two neighboring strings A and B. Then move a random cell from string A to string B, and another from string B to string A.
+            """
+
+            num_attempts = 10
+            for i in num_attempts:
+                try:
+                    from_pos_1, to_pos_1, from_pos_2, to_pos_2 = self._find_cell_swap_pair()
+                    break
+                except ValueError:
+                    logger.warning("Failed to find cell swap pair!")
+                    return
+
+            move_found = False
+            for a_pos, b_pos in valid_pairs:
+                for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
+                    source_string = self.pos_to_string[from_pos]
+                    target_string = self.pos_to_string[to_pos]
+
+                    logger.debug("Ensuring mutation maintains continuity...")
+                    if not self.is_string_connected_without_cell(source_string, from_pos):
+                        logger.debug("Skipped mutation because it would cause a string to lose continuity")
+                        continue
+
+                    logger.debug("Ensuring mutation doesn't exceed max string size...")
+                    if len(target_string.Cells) >= self.max_string_cells:
+                        logger.debug(f"Skipped mutation because {target_string.Name} already has "
+                                    f"the maximum cell count of {self.max_string_cells}")
+                        continue
+
+                    self._swap_cell_string(from_pos, source_string, target_string)
+
+                    move_found = True
+                    break
+
+                if move_found:
+                    break
+
+            if not move_found:
+                logger.warning("No valid mutation found that preserves string continuity.")
 
     def undo_mutate(self):
         """
@@ -240,6 +310,17 @@ class ArrayHandler:
         """
         cell_to_move, original_string = self.last_move
         self._update_cell_membership(cell_to_move, original_string)
+
+    def _swap_cell_string(self, from_pos, source_string, target_string) -> None:
+        """
+        Move the cell at position `from_pos` from `source_string` to `target_string`.
+        """
+        # Get reference to cell
+        cell_to_move = self.cell_registry[from_pos]
+        logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
+
+        self.last_move = (cell_to_move, source_string)
+        self._update_cell_membership(cell_to_move, target_string)
 
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
