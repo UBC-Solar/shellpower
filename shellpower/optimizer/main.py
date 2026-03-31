@@ -1,10 +1,11 @@
 from shellpower import ArraySimulatorInput
-from shellpower.optimizer.config import brainerd_afternoon
+from shellpower.optimizer.config import test_cases, test_case_names
 from shellpower.simulator.Simulation import Simulation
 from array_handler import ArrayHandler
 from simulated_annealing import SimulatedAnnealing
 import matplotlib.pyplot as plt
 from pathlib import Path
+import numpy as np
 import datetime
 import logging
 import random
@@ -29,7 +30,7 @@ def run_optimization():
 
     # Optimization configuration
     RNG_SEED: int = 0
-    NUM_ITERS: int = 1000
+    NUM_ITERS: int = 20000
     """
     Higher tempertures increase the probability that a worse mutation will be kept.
     Temperature T decays over time throughout the simulation.
@@ -37,13 +38,15 @@ def run_optimization():
         - If a mutation worsens the objective by 0.5T, there is a 61% chance it will be kept.
         - If a mutation worsens the objective by T, there is a 37% chance it will be kept.
         - If a mutation worsens the objective by 2T, there is a 14% chance it will be kept.
+    A temperature of zero means only beneficial changes are kept (hill climbing)
     """
-    INIT_TEMP: float = 0.5  # Watts; the score is -power of the whole array
+    INIT_TEMP: float = 0.3  # Watts; the score is -power of the whole array
     MAX_STRING_CELLS: int = 107
     DUAL_MUTATE_PROBABILITY: float = 0.5
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
+    # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
+    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-02-23_22h17m25s\latest_texture.png"
     TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
@@ -90,33 +93,50 @@ def run_optimization():
         nonlocal texture_number
         iter_start = time.perf_counter()
 
-        # DIRTY FIX
-        # On my desktop PC, it slows down greatly (0.7s -> 9s) per run when the window hasn't been clicked in ~5s
-        try_click_window("OpenTK Window")
-
         # 1. Save the current ArraySpec
         logger.debug("Exporting the current texture...")
         texture_path = simulation_dir / f"texture_{texture_number}.png"
         handler.save_texture(texture_path)
+        handler.save_texture(simulation_dir / "latest_texture.png")
         texture_number += 1
 
-        # 2. Define the irradiance conditions
-        simulator_input = ArraySimulatorInput(
-            **brainerd_afternoon,
-            LayoutTexturePath=texture_path,
-            MeshPath=str(TOP_SHELL_MODEL),
-        )
+        case_powers = np.zeros(len(test_cases))
+        for i, (case, name) in enumerate(zip(test_cases, test_case_names)):
 
-        # 3. Compute the value to be minimized
-        logger.debug("Simulating power...")
-        power = handler.get_watts(simulator_input)
+            # DIRTY FIX
+            # On my desktop PC, it slows down greatly (0.7s -> 9s) per run when the window hasn't been clicked in ~5s
+            try_click_window("OpenTK Window")
+
+            # Define the irradiance conditions
+            simulator_input = ArraySimulatorInput(
+                **case,
+                LayoutTexturePath=texture_path,
+                MeshPath=str(TOP_SHELL_MODEL),
+            )
+
+            # Compute the value to be minimized
+            logger.debug(f"Simulating test case {name}...")
+            power = handler.get_watts(simulator_input)
+            logger.debug(f"Estimated {power} W for {name}...")
+
+            case_powers[i] = power
+
+        avg_power = case_powers.mean()
 
         iter_duration = time.perf_counter() - iter_start
         logger.info(
-            f"[Iter {texture_number}] Power: {power:.4f} W | Eval Time: {iter_duration:.2f}s"
+            f"[Iter {texture_number}] Average Power: {avg_power:.4f} W | Eval Time: {iter_duration:.2f}s"
         )
 
-        return -power
+        # Debug: Plot the progress over time
+        plt.clf()
+        plt.plot(sa_optimizer.scores)
+        plt.title("Simulated Annealing Score vs. Iteration Number")
+        plt.xlabel("Iteration number")
+        plt.ylabel("Score (lower is better)")
+        plt.savefig(str(simulation_dir / "progress_plot.png"))
+
+        return -avg_power
 
     def mutate_function() -> None:
         if random.random() > DUAL_MUTATE_PROBABILITY:
@@ -141,6 +161,7 @@ def run_optimization():
     logger.info(f"Simulated annealing complete in {total_duration:.2f} seconds!")
 
     # Plot objective over time
+    plt.clf()
     plt.plot(sa_optimizer.scores)
     plt.title("Simulated Annealing Score vs. Iteration Number")
     plt.xlabel("Iteration number")

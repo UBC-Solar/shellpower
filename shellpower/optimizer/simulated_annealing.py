@@ -48,7 +48,7 @@ class SimulatedAnnealing:
         # linear decay
         t = self._init_temp * (1 - r)
 
-        assert t > 0, f"Cannot have negative temperature! {r=}"
+        assert t >= 0, f"Cannot have negative temperature! {r=}"
         return t
 
     def simulate(self):
@@ -71,6 +71,7 @@ class SimulatedAnnealing:
                 acceptance_probability = 1
                 logger.info("New config is superior! Keeping changes...")
                 self.scores.append(updated_score)
+                prev_score = updated_score
 
             else:
                 if temp == 0:
@@ -94,10 +95,11 @@ class SimulatedAnnealing:
                 if acceptance_probability >= random.random():
                     logger.info("Accepted! Keeping changes...")
                     self.scores.append(updated_score)
+
+                    # Only update prev_score when the change is kept!
+                    prev_score = updated_score
                     pass
                 else:
                     logger.info("Rejected! Undoing changes...")
                     self.scores.append(prev_score)
                     self._undo_mutate_func()
-
-            prev_score = updated_score
