@@ -9,6 +9,7 @@ import random
 
 logger = logging.getLogger(__name__)
 
+point = tuple[int, int]
 
 class ArrayHandler:
     """
@@ -26,27 +27,26 @@ class ArrayHandler:
         self.max_string_cells: int = max_string_cells
 
         logger.info("Computing cell positions...")
-        self.cell_registry = {}  # pos_key -> cell_object
-        self.cell_positions = {} # cell_object_id -> pos_key (for internal lookup)
+        self.cell_registry: dict[point, object] = {}  # pos_key -> cell_object
 
         for string in self.aspec.Strings:
             for cell in string.Cells:
-                pos = self.get_cell_position(cell)
+                pos: point = self.get_cell_position(cell)
                 self.cell_registry[pos] = cell 
                 # We use the position as the absolute source of truth
 
         # Compute adjacency based on the position keys
         logger.info("Computing geometric adjacency...")
-        self.geometric_pairs = self.compute_geometric_adjacency()
+        self.geometric_pairs: list[tuple[object, object]] = self.compute_geometric_adjacency()
 
-        self.adj_lookup = defaultdict(list)
+        self.adj_lookup: dict[point, list[point]] = defaultdict(list)
         for a_pos, b_pos in self.geometric_pairs:
             self.adj_lookup[a_pos].append(b_pos)
             self.adj_lookup[b_pos].append(a_pos)
 
         # Persistent cell-string lookup
         logger.info("Initializing cell-to-string lookup...")
-        self.pos_to_string = {}
+        self.pos_to_string: dict[point, object] = {}
         for string in self.aspec.Strings:
             for cell in string.Cells:
                 pos = self.get_cell_position(cell)
