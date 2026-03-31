@@ -42,11 +42,11 @@ def run_optimization():
     """
     INIT_TEMP: float = 0.3  # Watts; the score is -power of the whole array
     MAX_STRING_CELLS: int = 107
-    DUAL_MUTATE_PROBABILITY: float = 0.5
+    DUAL_MUTATE_PROBABILITY: float = 0.8
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
-    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-02-23_22h17m25s\latest_texture.png"
+    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-03-30_22h38m22s\latest_texture.png"
     TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
@@ -138,13 +138,16 @@ def run_optimization():
 
         return -avg_power
 
-    def mutate_function() -> None:
+    def mutate_function() -> int:
+        """Mutate the array, and return the number of cell moves conducted"""
         if random.random() > DUAL_MUTATE_PROBABILITY:
             logger.info("Attempting single cell move!")
             handler.mutate_adjacent()
+            return 1
         else:
             logger.info("Attempting dual cell swap!")
             handler.dual_mutate_adjacent()
+            return 2
 
     # Run simulated annealing optimization
     sa_optimizer: SimulatedAnnealing = SimulatedAnnealing(

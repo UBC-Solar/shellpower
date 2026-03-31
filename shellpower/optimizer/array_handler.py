@@ -183,14 +183,16 @@ class ArrayHandler:
                 # We use the position as the absolute source of truth
         return mapping
 
-    def mutate_adjacent(self) -> None:
+    def mutate_adjacent(self) -> bool:
         """
         Move a random cell to a neighboring string, ensuring the source string
         is not split into two disconnected components.
+
+        Returns true if a mutation was successfully found, and false otherwise
         """
 
         # string name -> [(cell_pos on this, cell_pos on other), ...]
-        cell_pair_map: dict[list[tuple[point, point]]] = self.get_string_cell_pair_map()
+        cell_pair_map: dict[str, list[tuple[point, point]]] = self.get_string_cell_pair_map()
         strings_with_pairs: list[str] = [string for string in cell_pair_map.keys()]
         random.shuffle(strings_with_pairs)
 
@@ -210,13 +212,17 @@ class ArrayHandler:
                     # Move breaks string size constraint or continuity
                     continue
 
-                return
+                return True
 
         logger.warning("No valid mutation found that preserves string continuity.")
+        return False
 
-    def dual_mutate_adjacent(self) -> None:
+    def dual_mutate_adjacent(self) -> bool:
         """
-        Choose two neighboring strings A and B. Then move a random cell from string A to string B, and another from string B to string A.
+        Choose two neighboring strings A and B. Then move a random cell from string A to string B,
+        and another from string B to string A.
+
+        Returns true if a mutation pair was successfully found, and false otherwise
         """
 
         # string name -> [(cell_pos on this, cell_pos on other), ...]
@@ -225,6 +231,7 @@ class ArrayHandler:
 
         chosen_cell_a_pos = None
         chosen_string_a = None
+        chosen_string_b = None
 
         random.shuffle(strings_with_pairs)
         for string_a_name in strings_with_pairs:
@@ -241,6 +248,7 @@ class ArrayHandler:
                     self._update_cell_membership(a_pos, string_a, string_b)
                     chosen_cell_a_pos = a_pos
                     chosen_string_a = string_a
+                    chosen_string_b = string_b
                     break
                 except ValueError:
                     # Move breaks string size constraint or continuity
@@ -251,15 +259,15 @@ class ArrayHandler:
 
         if chosen_cell_a_pos is None:
             logger.warning("No valid mutation found that preserves string continuity.")
-            return
+            return False
 
         # Find other pairs which move a cell from b to a
+        # Re-compute after the first move so adjacency reflects current state
+        updated_pair_map = self.get_string_cell_pair_map()
         possible_pairs = [
-            pair for pair in cell_pair_map[string_b.Name]
-            if self.pos_to_string[pair[1]] == chosen_string_a
-            and pair[0] != chosen_cell_a_pos
+            pair for pair in updated_pair_map[chosen_string_b.Name]
+            if self.pos_to_string[pair[1]].Name == chosen_string_a.Name
         ]
-
         logger.debug(f"Found {len(possible_pairs)} possible b->a swaps!")
 
         random.shuffle(possible_pairs)
@@ -273,10 +281,11 @@ class ArrayHandler:
                 # Move breaks string size constraint or continuity
                 continue
 
-            return
+            return True
 
         logger.warning("Found move from string a to b, but not b to a! Reverting...")
         self.undo_mutate()
+        return False
 
     def get_adjacent_pairs(self) -> list[tuple[point, point]]:
         logger.debug("Building neighbouring cell pair list...")
@@ -338,15 +347,15 @@ class ArrayHandler:
         """
 
         # 0. Validate change
-        logger.debug("Ensuring mutation maintains continuity...")
-        if not self.is_string_connected_without_cell(source_string, cell_pos):
-            msg = "Skipped mutation because it would cause a string to lose continuity"
-            logger.debug(msg)
-            raise ValueError(msg)
         logger.debug("Ensuring mutation doesn't exceed max string size...")
         if len(target_string.Cells) >= self.max_string_cells:
             msg = f"Skipped mutation because {target_string.Name} already has " \
                 f"the maximum cell count of {self.max_string_cells}"
+            logger.debug(msg)
+            raise ValueError(msg)
+        logger.debug("Ensuring mutation maintains continuity...")
+        if not self.is_string_connected_without_cell(source_string, cell_pos):
+            msg = "Skipped mutation because it would cause a string to lose continuity"
             logger.debug(msg)
             raise ValueError(msg)
 
@@ -383,3 +392,10 @@ class ArrayHandler:
         cell_to_move = self.cell_registry[cell_pos]
         self.aspec.AddCellToCellString(cell_to_move, move_source)
         self.aspec.Recolor()
+
+    def assert_state_consistent(self):
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos = self.get_cell_position(cell)
+                assert self.pos_to_string[pos] == string, \
+                    f"State desync at {pos}: expected {string.Name}, got {self.pos_to_string[pos].Name}"
