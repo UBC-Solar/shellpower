@@ -25,8 +25,6 @@ class ArrayHandler:
         self.aspec: object = array_spec
         self.max_string_cells: int = max_string_cells
 
-        # FIX 1: Map everything by a stable key (the coordinate tuple)
-        # We store the 'real' cell object once to keep it alive and for API calls
         logger.info("Computing cell positions...")
         self.cell_registry = {}  # pos_key -> cell_object
         self.cell_positions = {} # cell_object_id -> pos_key (for internal lookup)
@@ -37,7 +35,7 @@ class ArrayHandler:
                 self.cell_registry[pos] = cell 
                 # We use the position as the absolute source of truth
 
-        # FIX 2: Compute adjacency based on the position keys
+        # Compute adjacency based on the position keys
         logger.info("Computing geometric adjacency...")
         self.geometric_pairs = self.compute_geometric_adjacency()
 
@@ -46,7 +44,7 @@ class ArrayHandler:
             self.adj_lookup[a_pos].append(b_pos)
             self.adj_lookup[b_pos].append(a_pos)
 
-        # NEW: Initialize the persistent map
+        # Persistent cell-string lookup
         logger.info("Initializing cell-to-string lookup...")
         self.pos_to_string = {}
         for string in self.aspec.Strings:
@@ -270,7 +268,7 @@ class ArrayHandler:
             """
 
             num_attempts = 10
-            for i in num_attempts:
+            for i in range(num_attempts):
                 try:
                     from_pos_1, to_pos_1, from_pos_2, to_pos_2 = self._find_cell_swap_pair()
                     break
