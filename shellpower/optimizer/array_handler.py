@@ -27,13 +27,7 @@ class ArrayHandler:
         self.max_string_cells: int = max_string_cells
 
         logger.info("Computing cell positions...")
-        self.cell_registry: dict[point, object] = {}  # pos_key -> cell_object
-
-        for string in self.aspec.Strings:
-            for cell in string.Cells:
-                pos: point = self.get_cell_position(cell)
-                self.cell_registry[pos] = cell 
-                # We use the position as the absolute source of truth
+        self.cell_registry: dict[point, object] = self.build_cell_pos_to_obj_map()  # pos_key -> cell_object
 
         # Compute adjacency based on the position keys
         logger.info("Computing geometric adjacency...")
@@ -46,13 +40,12 @@ class ArrayHandler:
 
         # Persistent cell-string lookup
         logger.info("Initializing cell-to-string lookup...")
-        self.pos_to_string: dict[point, object] = {}
-        for string in self.aspec.Strings:
-            for cell in string.Cells:
-                pos = self.get_cell_position(cell)
-                self.pos_to_string[pos] = string
+        self.pos_to_string: dict[point, object] = self.build_cell_to_string_map()
 
         self._simulator = ArraySimulator()
+
+        # List of mutations of the form (cell_pos, string_from, string_to)
+        self._mutation_stack: list[tuple[point, object, object]]
 
     # ============================================================
     # GEOMETRY
@@ -171,13 +164,23 @@ class ArrayHandler:
     # ARRAY MANIPULATION
     # ============================================================
 
-    def build_cell_to_string_map(self) -> dict:
+    def build_cell_to_string_map(self) -> dict[point, object]:
         """Returns a mapping of position_tuple -> string_object."""
         mapping = {}
         for string in self.aspec.Strings:
             for cell in string.Cells:
                 pos = self.get_cell_position(cell)
                 mapping[pos] = string
+        return mapping
+
+    def build_cell_pos_to_obj_map(self) -> dict[point, object]:
+        """Returns a mapping of position_tuple -> cell_object."""
+        mapping = {}
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos: point = self.get_cell_position(cell)
+                mapping[pos] = cell 
+                # We use the position as the absolute source of truth
         return mapping
 
     def mutate_adjacent(self) -> None:
