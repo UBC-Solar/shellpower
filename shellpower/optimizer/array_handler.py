@@ -45,7 +45,7 @@ class ArrayHandler:
         self._simulator = ArraySimulator()
 
         # List of mutations of the form (cell_pos, string_from, string_to)
-        self._mutation_stack: list[tuple[point, object, object]]
+        self._mutation_stack: list[tuple[point, object, object]] = []
 
     # ============================================================
     # GEOMETRY
@@ -220,19 +220,19 @@ class ArrayHandler:
         """
 
         # string name -> [(cell_pos on this, cell_pos on other), ...]
-        cell_pair_map: dict[list[tuple[point, point]]] = self.get_string_cell_pair_map()
+        cell_pair_map: dict[str, list[tuple[point, point]]] = self.get_string_cell_pair_map()
         strings_with_pairs: list[str] = [string for string in cell_pair_map.keys()]
-        random.shuffle(strings_with_pairs)
 
         chosen_cell_a_pos = None
         chosen_string_a = None
-        chosen_string_b = None
+
+        random.shuffle(strings_with_pairs)
         for string_a_name in strings_with_pairs:
 
             # Choose which string to move from
             possible_pairs = cell_pair_map[string_a_name]
-            random.shuffle(possible_pairs)
 
+            random.shuffle(possible_pairs)
             for a_pos, b_pos in possible_pairs:
                 string_a: object = self.pos_to_string[a_pos]
                 string_b: object = self.pos_to_string[b_pos]
@@ -241,12 +241,13 @@ class ArrayHandler:
                     self._update_cell_membership(a_pos, string_a, string_b)
                     chosen_cell_a_pos = a_pos
                     chosen_string_a = string_a
-                    chosen_string_b = string_b
+                    break
                 except ValueError:
                     # Move breaks string size constraint or continuity
                     continue
 
-                return
+            if chosen_cell_a_pos is not None:
+                break
 
         if chosen_cell_a_pos is None:
             logger.warning("No valid mutation found that preserves string continuity.")
@@ -259,6 +260,9 @@ class ArrayHandler:
             and pair[0] != chosen_cell_a_pos
         ]
 
+        logger.debug(f"Found {len(possible_pairs)} possible b->a swaps!")
+
+        random.shuffle(possible_pairs)
         for b_pos, a_pos in possible_pairs:
             string_b: object = self.pos_to_string[b_pos]
             string_a: object = self.pos_to_string[a_pos]
@@ -283,15 +287,15 @@ class ArrayHandler:
         ]
         return valid_pairs
 
-    def get_string_cell_pair_map(self) -> dict[list[tuple[point, point]]]:
+    def get_string_cell_pair_map(self) -> dict[str, list[tuple[point, point]]]:
         valid_pairs: list[tuple[point, point]] = self.get_adjacent_pairs()
 
-        string_cell_pair_map: dict[list[tuple[point, point]]] = defaultdict(list)
+        string_cell_pair_map: dict[str, list[tuple[point, point]]] = defaultdict(list)
         for cell_a, cell_b in valid_pairs:
             string_a = self.pos_to_string[cell_a]
             string_b = self.pos_to_string[cell_b]
-            string_cell_pair_map[string_a].append(cell_a, cell_b)
-            string_cell_pair_map[string_b].append(cell_b, cell_a)
+            string_cell_pair_map[string_a.Name].append((cell_a, cell_b))
+            string_cell_pair_map[string_b.Name].append((cell_b, cell_a))
 
         return string_cell_pair_map
 

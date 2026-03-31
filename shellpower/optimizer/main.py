@@ -120,8 +120,10 @@ def run_optimization():
 
     def mutate_function() -> None:
         if random.random() > DUAL_MUTATE_PROBABILITY:
+            logger.info("Attempting single cell move!")
             handler.mutate_adjacent()
         else:
+            logger.info("Attempting dual cell swap!")
             handler.dual_mutate_adjacent()
 
     # Run simulated annealing optimization
