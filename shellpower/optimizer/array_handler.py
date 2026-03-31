@@ -188,40 +188,52 @@ class ArrayHandler:
         Move a random cell to a neighboring string, ensuring the source string
         is not split into two disconnected components.
         """
+
+        # string name -> [(cell_pos on this, cell_pos on other), ...]
+        cell_pair_map: dict[list[tuple[point, point]]] = self.get_string_cell_pair_map()
+        strings_with_pairs: list[str] = [string for string in cell_pair_map.keys()]
+        random.shuffle(strings_with_pairs)
+
+        for string_a_name in strings_with_pairs:
+
+            # Choose which string to move from
+            possible_pairs = cell_pair_map[string_a_name]
+            random.shuffle(possible_pairs)
+
+            for a_pos, b_pos in possible_pairs:
+                string_b: object = self.pos_to_string[b_pos]
+                string_a: object = self.pos_to_string[a_pos]
+
+                try:
+                    self._update_cell_membership(a_pos, string_a, string_b)
+                except ValueError:
+                    # Move breaks string size constraint or continuity
+                    continue
+
+                return
+
+        logger.warning("No valid mutation found that preserves string continuity.")
+
+    def get_adjacent_pairs(self) -> list[tuple[point, point]]:
         logger.debug("Building neighbouring cell pair list...")
         valid_pairs = [
             (a_pos, b_pos)
             for (a_pos, b_pos) in self.geometric_pairs
             if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
         ]
+        return valid_pairs
 
-        if not valid_pairs:
-            return
+    def get_string_cell_pair_map(self) -> dict[list[tuple[point, point]]]:
+        valid_pairs: list[tuple[point, point]] = self.get_adjacent_pairs()
 
-        random.shuffle(valid_pairs)
+        string_cell_pair_map: dict[list[tuple[point, point]]] = defaultdict(list)
+        for cell_a, cell_b in valid_pairs:
+            string_a = self.pos_to_string[cell_a]
+            string_b = self.pos_to_string[cell_b]
+            string_cell_pair_map[string_a].append(cell_a, cell_b)
+            string_cell_pair_map[string_b].append(cell_b, cell_a)
 
-        move_found = False
-        for a_pos, b_pos in valid_pairs:
-            for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
-                source_string = self.pos_to_string[from_pos]
-                target_string = self.pos_to_string[to_pos]
-
-                logger.debug("Ensuring mutation doesn't exceed max string size...")
-                if len(target_string.Cells) >= self.max_string_cells:
-                    logger.debug(f"Skipped mutation because {target_string.Name} already has "
-                                 f"the maximum cell count of {self.max_string_cells}")
-                    continue
-
-                self._swap_cell_string(from_pos, source_string, target_string)
-
-                move_found = True
-                break
-
-            if move_found:
-                break
-
-        if not move_found:
-            logger.warning("No valid mutation found that preserves string continuity.")
+        return string_cell_pair_map
 
     def _find_cell_swap_pair(self):
         logger.debug("Building neighbouring cell pair list...")
@@ -336,7 +348,22 @@ class ArrayHandler:
 
         Centralized method to handle cell movement. 
         Updates the internal cache, movement stack, the C# ArraySpec, and triggers recoloring.
+
+        Raises ValueError if the string configuration is invalid.
         """
+
+        # 0. Validate change
+        logger.debug("Ensuring mutation maintains continuity...")
+        if not self.is_string_connected_without_cell(source_string, cell_pos):
+            msg = "Skipped mutation because it would cause a string to lose continuity"
+            logger.debug(msg)
+            raise ValueError(msg)
+        logger.debug("Ensuring mutation doesn't exceed max string size...")
+        if len(target_string.Cells) >= self.max_string_cells:
+            msg = f"Skipped mutation because {target_string.Name} already has " \
+                f"the maximum cell count of {self.max_string_cells}"
+            logger.debug(msg)
+            raise ValueError(msg)
 
         logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
 
