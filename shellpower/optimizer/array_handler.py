@@ -295,43 +295,6 @@ class ArrayHandler:
 
         return string_cell_pair_map
 
-    # def _find_cell_swap_pair(self):
-    #     logger.debug("Building neighbouring cell pair list...")
-    #     valid_pairs = [
-    #         (a_pos, b_pos)
-    #         for (a_pos, b_pos) in self.geometric_pairs
-    #         if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
-    #     ]
-    #     random.shuffle(valid_pairs)
-
-    #     # Choose the string pair for cell swap 1 (cell goes from a to b)
-    #     from_pos_1, to_pos_1 = valid_pairs[0]
-    #     string_a_1 = self.pos_to_string[from_pos_1].Name
-    #     string_b_1 = self.pos_to_string[to_pos_1].Name
-
-    #     # Look for a second pair with the same two strings
-    #     from_pos_2 = None
-    #     to_pos_2 = None
-    #     for pos_1, pos_2 in valid_pairs[1:]: # Don't duplicate the first pair, which we have already selected
-    #         string_a_2 = self.pos_to_string[pos_1].Name
-    #         string_b_2 = self.pos_to_string[pos_2].Name
-
-    #         # Make sure the pair for cell swap 2 is from b to a
-    #         if (string_a_2 == string_a_1) and (string_b_2 == string_b_1):
-    #             from_pos_2 = pos_1
-    #             to_pos_2 = pos_2
-    #             break
-    #         if (string_a_2 == string_b_1) and (string_b_2 == string_a_1):
-    #             # a and b are swapped!
-    #             from_pos_2 = pos_2
-    #             to_pos_2 = pos_1
-    #             break
-
-    #     if None in (from_pos_2, to_pos_2):
-    #         raise ValueError("Failed to find cell swap pair!")
-
-    #     return from_pos_1, to_pos_1, from_pos_2, to_pos_2
-
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
     # ============================================================
