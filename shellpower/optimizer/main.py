@@ -40,6 +40,7 @@ def run_optimization():
     """
     INIT_TEMP: float = 0.5  # Watts; the score is -power of the whole array
     MAX_STRING_CELLS: int = 107
+    DUAL_MUTATE_PROBABILITY: float = 0.5
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
@@ -117,10 +118,16 @@ def run_optimization():
 
         return -power
 
+    def mutate_function() -> None:
+        if random.random() > DUAL_MUTATE_PROBABILITY:
+            handler.mutate_adjacent()
+        else:
+            handler.dual_mutate_adjacent()
+
     # Run simulated annealing optimization
     sa_optimizer: SimulatedAnnealing = SimulatedAnnealing(
         objective_function,
-        handler.mutate_adjacent,
+        mutate_function,
         handler.undo_mutate,
         INIT_TEMP,
         NUM_ITERS,
