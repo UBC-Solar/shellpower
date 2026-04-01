@@ -45,7 +45,7 @@ class ArrayHandler:
         self._simulator = ArraySimulator()
 
         # List of mutations of the form (cell_pos, string_from, string_to)
-        self._mutation_stack: list[tuple[point, object, object]]
+        self._mutation_stack: list[tuple[point, object, object]] = []
 
     # ============================================================
     # GEOMETRY
@@ -183,150 +183,130 @@ class ArrayHandler:
                 # We use the position as the absolute source of truth
         return mapping
 
-    def mutate_adjacent(self) -> None:
+    def mutate_adjacent(self) -> bool:
         """
         Move a random cell to a neighboring string, ensuring the source string
         is not split into two disconnected components.
+
+        Returns true if a mutation was successfully found, and false otherwise
         """
-        logger.debug("Building neighbouring cell pair list...")
-        valid_pairs = [
-            (a_pos, b_pos)
-            for (a_pos, b_pos) in self.geometric_pairs
-            if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
-        ]
 
-        if not valid_pairs:
-            return
+        # string name -> [(cell_pos on this, cell_pos on other), ...]
+        cell_pair_map: dict[str, list[tuple[point, point]]] = self.get_string_cell_pair_map()
+        strings_with_pairs: list[str] = [string for string in cell_pair_map.keys()]
+        random.shuffle(strings_with_pairs)
 
-        random.shuffle(valid_pairs)
+        for string_a_name in strings_with_pairs:
 
-        move_found = False
-        for a_pos, b_pos in valid_pairs:
-            for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
-                source_string = self.pos_to_string[from_pos]
-                target_string = self.pos_to_string[to_pos]
+            # Choose which string to move from
+            possible_pairs = cell_pair_map[string_a_name]
+            random.shuffle(possible_pairs)
 
-                logger.debug("Ensuring mutation maintains continuity...")
-                if not self.is_string_connected_without_cell(source_string, from_pos):
-                    logger.debug("Skipped mutation because it would cause a string to lose continuity")
-                    continue
+            for a_pos, b_pos in possible_pairs:
+                string_b: object = self.pos_to_string[b_pos]
+                string_a: object = self.pos_to_string[a_pos]
 
-                logger.debug("Ensuring mutation doesn't exceed max string size...")
-                if len(target_string.Cells) >= self.max_string_cells:
-                    logger.debug(f"Skipped mutation because {target_string.Name} already has "
-                                 f"the maximum cell count of {self.max_string_cells}")
-                    continue
-
-                self._swap_cell_string(from_pos, source_string, target_string)
-
-                move_found = True
-                break
-
-            if move_found:
-                break
-
-        if not move_found:
-            logger.warning("No valid mutation found that preserves string continuity.")
-
-    def _find_cell_swap_pair(self):
-        logger.debug("Building neighbouring cell pair list...")
-        valid_pairs = [
-            (a_pos, b_pos)
-            for (a_pos, b_pos) in self.geometric_pairs
-            if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
-        ]
-        random.shuffle(valid_pairs)
-
-        # Choose the string pair for cell swap 1 (cell goes from a to b)
-        from_pos_1, to_pos_1 = valid_pairs[0]
-        string_a_1 = self.pos_to_string[from_pos_1].Name
-        string_b_1 = self.pos_to_string[to_pos_1].Name
-
-        # Look for a second pair with the same two strings
-        from_pos_2 = None
-        to_pos_2 = None
-        for pos_1, pos_2 in valid_pairs[1:]: # Don't duplicate the first pair, which we have already selected
-            string_a_2 = self.pos_to_string[pos_1].Name
-            string_b_2 = self.pos_to_string[pos_2].Name
-
-            # Make sure the pair for cell swap 2 is from b to a
-            if (string_a_2 == string_a_1) and (string_b_2 == string_b_1):
-                from_pos_2 = pos_1
-                to_pos_2 = pos_2
-                break
-            if (string_a_2 == string_b_1) and (string_b_2 == string_a_1):
-                # a and b are swapped!
-                from_pos_2 = pos_2
-                to_pos_2 = pos_1
-                break
-
-        if None in (from_pos_2, to_pos_2):
-            raise ValueError("Failed to find cell swap pair!")
-
-        return from_pos_1, to_pos_1, from_pos_2, to_pos_2
-
-    def dual_mutate_adjacent(self) -> None:
-            """
-            Choose two neighboring strings A and B. Then move a random cell from string A to string B, and another from string B to string A.
-            """
-
-            num_attempts = 10
-            for i in range(num_attempts):
                 try:
-                    from_pos_1, to_pos_1, from_pos_2, to_pos_2 = self._find_cell_swap_pair()
+                    self._update_cell_membership(a_pos, string_a, string_b)
+                except ValueError:
+                    # Move breaks string size constraint or continuity
+                    continue
+
+                return True
+
+        logger.warning("No valid mutation found that preserves string continuity.")
+        return False
+
+    def dual_mutate_adjacent(self) -> bool:
+        """
+        Choose two neighboring strings A and B. Then move a random cell from string A to string B,
+        and another from string B to string A.
+
+        Returns true if a mutation pair was successfully found, and false otherwise
+        """
+
+        # string name -> [(cell_pos on this, cell_pos on other), ...]
+        cell_pair_map: dict[str, list[tuple[point, point]]] = self.get_string_cell_pair_map()
+        strings_with_pairs: list[str] = [string for string in cell_pair_map.keys()]
+
+        chosen_cell_a_pos = None
+        chosen_string_a = None
+        chosen_string_b = None
+
+        random.shuffle(strings_with_pairs)
+        for string_a_name in strings_with_pairs:
+
+            # Choose which string to move from
+            possible_pairs = cell_pair_map[string_a_name]
+
+            random.shuffle(possible_pairs)
+            for a_pos, b_pos in possible_pairs:
+                string_a: object = self.pos_to_string[a_pos]
+                string_b: object = self.pos_to_string[b_pos]
+
+                try:
+                    self._update_cell_membership(a_pos, string_a, string_b)
+                    chosen_cell_a_pos = a_pos
+                    chosen_string_a = string_a
+                    chosen_string_b = string_b
                     break
                 except ValueError:
-                    logger.warning("Failed to find cell swap pair!")
-                    return
+                    # Move breaks string size constraint or continuity
+                    continue
 
-            move_found = False
-            for a_pos, b_pos in valid_pairs:
-                for from_pos, to_pos in [(a_pos, b_pos), (b_pos, a_pos)]:
-                    source_string = self.pos_to_string[from_pos]
-                    target_string = self.pos_to_string[to_pos]
+            if chosen_cell_a_pos is not None:
+                break
 
-                    logger.debug("Ensuring mutation maintains continuity...")
-                    if not self.is_string_connected_without_cell(source_string, from_pos):
-                        logger.debug("Skipped mutation because it would cause a string to lose continuity")
-                        continue
+        if chosen_cell_a_pos is None:
+            logger.warning("No valid mutation found that preserves string continuity.")
+            return False
 
-                    logger.debug("Ensuring mutation doesn't exceed max string size...")
-                    if len(target_string.Cells) >= self.max_string_cells:
-                        logger.debug(f"Skipped mutation because {target_string.Name} already has "
-                                    f"the maximum cell count of {self.max_string_cells}")
-                        continue
+        # Find other pairs which move a cell from b to a
+        # Re-compute after the first move so adjacency reflects current state
+        updated_pair_map = self.get_string_cell_pair_map()
+        possible_pairs = [
+            pair for pair in updated_pair_map[chosen_string_b.Name]
+            if self.pos_to_string[pair[1]].Name == chosen_string_a.Name
+        ]
+        logger.debug(f"Found {len(possible_pairs)} possible b->a swaps!")
 
-                    self._swap_cell_string(from_pos, source_string, target_string)
+        random.shuffle(possible_pairs)
+        for b_pos, a_pos in possible_pairs:
+            string_b: object = self.pos_to_string[b_pos]
+            string_a: object = self.pos_to_string[a_pos]
 
-                    move_found = True
-                    break
+            try:
+                self._update_cell_membership(b_pos, string_b, string_a)
+            except ValueError:
+                # Move breaks string size constraint or continuity
+                continue
 
-                if move_found:
-                    break
+            return True
 
-            if not move_found:
-                logger.warning("No valid mutation found that preserves string continuity.")
+        logger.warning("Found move from string a to b, but not b to a! Reverting...")
+        self.undo_mutate()
+        return False
 
-    def undo_mutate(self):
-        """
-        Undo a previous mutation by restoring a cell to its original string.
+    def get_adjacent_pairs(self) -> list[tuple[point, point]]:
+        logger.debug("Building neighbouring cell pair list...")
+        valid_pairs = [
+            (a_pos, b_pos)
+            for (a_pos, b_pos) in self.geometric_pairs
+            if self.pos_to_string[a_pos].Name != self.pos_to_string[b_pos].Name # Compare by Name/ID
+        ]
+        return valid_pairs
 
-        :param remove_from_string: Original string
-        :param cell_to_move: Cell to restore
-        """
-        cell_to_move, original_string = self.last_move
-        self._update_cell_membership(cell_to_move, original_string)
+    def get_string_cell_pair_map(self) -> dict[str, list[tuple[point, point]]]:
+        valid_pairs: list[tuple[point, point]] = self.get_adjacent_pairs()
 
-    def _swap_cell_string(self, from_pos, source_string, target_string) -> None:
-        """
-        Move the cell at position `from_pos` from `source_string` to `target_string`.
-        """
-        # Get reference to cell
-        cell_to_move = self.cell_registry[from_pos]
-        logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
+        string_cell_pair_map: dict[str, list[tuple[point, point]]] = defaultdict(list)
+        for cell_a, cell_b in valid_pairs:
+            string_a = self.pos_to_string[cell_a]
+            string_b = self.pos_to_string[cell_b]
+            string_cell_pair_map[string_a.Name].append((cell_a, cell_b))
+            string_cell_pair_map[string_b.Name].append((cell_b, cell_a))
 
-        self.last_move = (cell_to_move, source_string)
-        self._update_cell_membership(cell_to_move, target_string)
+        return string_cell_pair_map
 
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
@@ -356,15 +336,66 @@ class ArrayHandler:
     # STATE MANAGEMENT (INTERNAL)
     # ============================================================
 
-    def _update_cell_membership(self, cell: object, target_string: object) -> None:
+    def _update_cell_membership(self, cell_pos: point, source_string: object, target_string: object) -> None:
         """
-        Centralized method to handle cell movement. 
-        Updates the internal cache, the C# ArraySpec, and triggers recoloring.
-        """
-        # 1. Update internal persistent map
-        pos = self.get_cell_position(cell)
-        self.pos_to_string[pos] = target_string
+        Move the cell at position `from_pos` from `source_string` to `target_string`.
 
-        # 2. Update the C# API
-        self.aspec.AddCellToCellString(cell, target_string)
+        Centralized method to handle cell movement. 
+        Updates the internal cache, movement stack, the C# ArraySpec, and triggers recoloring.
+
+        Raises ValueError if the string configuration is invalid.
+        """
+
+        # 0. Validate change
+        logger.debug("Ensuring mutation doesn't exceed max string size...")
+        if len(target_string.Cells) >= self.max_string_cells:
+            msg = f"Skipped mutation because {target_string.Name} already has " \
+                f"the maximum cell count of {self.max_string_cells}"
+            logger.debug(msg)
+            raise ValueError(msg)
+        logger.debug("Ensuring mutation maintains continuity...")
+        if not self.is_string_connected_without_cell(source_string, cell_pos):
+            msg = "Skipped mutation because it would cause a string to lose continuity"
+            logger.debug(msg)
+            raise ValueError(msg)
+
+        logger.info(f"Moving cell from string {source_string.Name} to {target_string.Name}...")
+
+        # 1. Update the cell movement stack
+        self._mutation_stack.append((cell_pos, source_string, target_string))
+
+        # 2. Update internal persistent map
+        self.pos_to_string[cell_pos] = target_string
+
+        # 3. Update the C# API
+        cell_to_move = self.cell_registry[cell_pos]
+        self.aspec.AddCellToCellString(cell_to_move, target_string)
         self.aspec.Recolor()
+
+    def undo_mutate(self):
+        """
+        Undo a the last mutation by restoring a cell to the string it was previously on.
+
+        The ArrayHandler manages a stack of cell movements, so undo_mutate can be chained.
+
+        :param remove_from_string: Original string
+        :param cell_to_move: Cell to restore
+        """
+
+        # 1. Update and query from the cell movement stack
+        cell_pos, move_source, move_target = self._mutation_stack.pop()
+
+        # 2. Update internal persistent map
+        self.pos_to_string[cell_pos] = move_source
+
+        # 3. Update the C# API
+        cell_to_move = self.cell_registry[cell_pos]
+        self.aspec.AddCellToCellString(cell_to_move, move_source)
+        self.aspec.Recolor()
+
+    def assert_state_consistent(self):
+        for string in self.aspec.Strings:
+            for cell in string.Cells:
+                pos = self.get_cell_position(cell)
+                assert self.pos_to_string[pos] == string, \
+                    f"State desync at {pos}: expected {string.Name}, got {self.pos_to_string[pos].Name}"

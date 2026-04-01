@@ -13,13 +13,14 @@ def natural_sort_key(filename):
 
 
 def create_gif(
-    folder_path, output_name="texture_animation.gif", fps=10, max_width=None, output_dir: Path = None
+    folder_path, output_name="texture_animation.gif", fps=10, max_width=None, output_dir: Path = None, skip_every: int = 1
 ):
     base_path = Path(folder_path)
     frame_duration = int(1000 / fps)
     pattern = re.compile(r"^texture_\d+\.(png|jpg|jpeg|bmp)$", re.IGNORECASE)
 
     files = [f for f in os.listdir(base_path) if pattern.match(f)]
+    files = files[::skip_every]
     files.sort(key=natural_sort_key)
 
     if not files:
@@ -60,9 +61,10 @@ def create_gif(
 
 if __name__ == "__main__":
     # CONFIGURATION
-    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\shellpower\outputs\2026-02-19_19h40m44s 200iters"
+    FOLDER = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-02-23_14h42m29s"
     OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
     FPS = 50  # Max allowed: 50FPS
     MAX_W = 500  # Set to None to keep original size
+    SKIP_NUMBER = 35 # Only use every nth frame
 
-    create_gif(FOLDER, fps=FPS, max_width=MAX_W, output_dir=OUTPUT_DIR)
+    create_gif(FOLDER, fps=FPS, max_width=MAX_W, output_dir=OUTPUT_DIR, skip_every=SKIP_NUMBER)

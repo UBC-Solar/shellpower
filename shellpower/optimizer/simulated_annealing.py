@@ -21,7 +21,7 @@ class SimulatedAnnealing:
 
         :param minimize_func: Objective function to minimize
         :param mutate_func: Function which traverses one node on the search space
-        :param undo_mutate_func: Function to revert the last mutation/traversal
+        :param undo_mutate_func: Function to revert the last mutation/traversal. Returns the number of cell swaps conducted.
         :param init_temp: Initial temperature.
             Higher tempertures increase the probability that a worse mutation will be kept. Temperature T decays over time throughout the simulation.
             Note that physically, temperature has the same dimension as the objective function:
@@ -48,7 +48,7 @@ class SimulatedAnnealing:
         # linear decay
         t = self._init_temp * (1 - r)
 
-        assert t > 0, f"Cannot have negative temperature! {r=}"
+        assert t >= 0, f"Cannot have negative temperature! {r=}"
         return t
 
     def simulate(self):
@@ -61,7 +61,7 @@ class SimulatedAnnealing:
             logger.info(f"Starting simulated annealing iteration {i}!")
 
             # Mutate & evaluate
-            self._mutate_func()
+            num_changes = self._mutate_func()
             updated_score = self._minimize_func()
 
             progress_ratio = i / self._num_iters
@@ -71,6 +71,7 @@ class SimulatedAnnealing:
                 acceptance_probability = 1
                 logger.info("New config is superior! Keeping changes...")
                 self.scores.append(updated_score)
+                prev_score = updated_score
 
             else:
                 if temp == 0:
@@ -94,10 +95,12 @@ class SimulatedAnnealing:
                 if acceptance_probability >= random.random():
                     logger.info("Accepted! Keeping changes...")
                     self.scores.append(updated_score)
+
+                    # Only update prev_score when the change is kept!
+                    prev_score = updated_score
                     pass
                 else:
                     logger.info("Rejected! Undoing changes...")
                     self.scores.append(prev_score)
-                    self._undo_mutate_func()
-
-            prev_score = updated_score
+                    for i in range(num_changes):
+                        self._undo_mutate_func()
