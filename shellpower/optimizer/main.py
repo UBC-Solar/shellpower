@@ -41,11 +41,12 @@ def run_optimization():
     A temperature of zero means only beneficial changes are kept (hill climbing)
     """
     INIT_TEMP: float = 0.3  # Watts; the score is -power of the whole array
-    MAX_STRING_CELLS: int = 107
-    DUAL_MUTATE_PROBABILITY: float = 0.8
+    MAX_STRING_CELLS: int = 100
+    MIN_STRING_CELLS: int = 93
+    DUAL_MUTATE_PROBABILITY: float = 0.3
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\texture_builder\assets\cascadia_final_234merged.png"
+    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-04-04_00h40m15s imbalanced\latest_texture.png"
     TOP_SHELL_MODEL = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\arrays\v4\v4-ep9-guillotined-ascii.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
@@ -75,16 +76,21 @@ def run_optimization():
     logger.info(f"Top shell model: {TOP_SHELL_MODEL}")
     logger.info(f"Initial temperature: {INIT_TEMP} W")
     logger.info(f"String max size: {MAX_STRING_CELLS} cells")
+    logger.info(f"String min size: {MIN_STRING_CELLS} cells")
 
     start_time = time.perf_counter()  # Performance tracking
 
-    # Inswtantiate ArraySpec & Handler
+    # Instantiate ArraySpec & Handler
     aspec: object = Simulation.ArraySpec(
         str(BASE_TEXTURE_PATH),
         str(TOP_SHELL_MODEL),
         str(BYPASS_DIODES_JSON),
     )
-    handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS)
+    handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS, MIN_STRING_CELLS)
+
+    handler.rebalance_strings()
+    rebalanced_texture_path = simulation_dir / f"rebalanced.png"
+    handler.save_texture(rebalanced_texture_path)
 
     # Define function to minimize by simulated annealing
     texture_number = 0

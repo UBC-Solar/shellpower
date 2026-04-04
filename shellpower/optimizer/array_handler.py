@@ -16,7 +16,7 @@ class ArrayHandler:
     Container class for C# ArraySpec object. Provides necessary methods for optimization of array configuration.
     """
 
-    def __init__(self, array_spec: object, max_string_cells: int):
+    def __init__(self, array_spec: object, max_string_cells: int, min_string_cells: int):
         """
         Instantiate an ArrayHandler object with a given ArraySpec
 
@@ -25,6 +25,7 @@ class ArrayHandler:
 
         self.aspec: object = array_spec
         self.max_string_cells: int = max_string_cells
+        self.min_string_cells: int = min_string_cells
 
         logger.info("Computing cell positions...")
         self.cell_registry: dict[point, object] = self.build_cell_pos_to_obj_map()  # pos_key -> cell_object
@@ -322,6 +323,57 @@ class ArrayHandler:
             logger.debug(f"{string_name} has {len(list_of_pairs)} pairs!")
 
         return string_cell_pair_map
+    
+    def rebalance_strings(self, max_attempts: int = 10_000) -> bool:
+        """
+        Repeatedly apply random mutations until all strings fall within the
+        allowed size range [min_string_cells, max_string_cells].
+
+        Mutations are only accepted if they reduce the number of violating
+        strings, or keep it the same (to allow escaping local traps). Any
+        mutation that increases violations is immediately rolled back.
+
+        :param max_attempts: Hard cap on mutation attempts to prevent infinite loops.
+        :return: True if all strings are within bounds, False if the cap was reached.
+        """
+
+        def count_violations() -> int:
+            return sum(
+                1 for string in self.aspec.Strings
+                if not (self.min_string_cells <= len(string.Cells) <= self.max_string_cells)
+            )
+
+        violations = count_violations()
+        if violations == 0:
+            logger.info("All strings already within allowed size range.")
+            return True
+
+        logger.info(f"Rebalancing strings. Initial violations: {violations}")
+
+        for attempt in range(max_attempts):
+            if violations == 0:
+                logger.info(f"All strings balanced after {attempt} mutations.")
+                return True
+
+            mutated = self.mutate_adjacent()
+            if not mutated:
+                logger.warning(f"No valid mutation available at attempt {attempt}. Stopping.")
+                return False
+
+            new_violations = count_violations()
+
+            if new_violations <= violations:
+                # Accept: progress made or neutral (allows escaping local traps)
+                violations = new_violations
+                logger.debug(f"Attempt {attempt}: accepted mutation, violations={violations}")
+            else:
+                # Reject: mutation made things worse
+                self.undo_mutate()
+                logger.debug(f"Attempt {attempt}: rejected mutation (would increase violations)")
+
+        logger.warning(f"Rebalance did not converge within {max_attempts} attempts. "
+                    f"Remaining violations: {violations}")
+        return False
 
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
@@ -366,6 +418,11 @@ class ArrayHandler:
         if len(target_string.Cells) >= self.max_string_cells:
             msg = f"Skipped mutation because {target_string.Name} already has " \
                 f"the maximum cell count of {self.max_string_cells}"
+            logger.debug(msg)
+            raise ValueError(msg)
+        if len(source_string.Cells) <= self.min_string_cells:
+            msg = f"Skipped mutation because {target_string.Name} already has " \
+                f"the minimum cell count of {self.min_string_cells}"
             logger.debug(msg)
             raise ValueError(msg)
         logger.debug("Ensuring mutation maintains continuity...")
