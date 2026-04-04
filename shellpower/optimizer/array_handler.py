@@ -42,6 +42,13 @@ class ArrayHandler:
         logger.info("Initializing cell-to-string lookup...")
         self.pos_to_string: dict[point, object] = self.build_cell_to_string_map()
 
+        string_cell_counts = {}
+        for cell_pos, string in self.pos_to_string.items():
+            num_cells = string_cell_counts.setdefault(string.Name, 0)
+            string_cell_counts[string.Name] = num_cells + 1
+        logger.debug("String cell counts:")
+        logger.debug(string_cell_counts)
+
         self._simulator = ArraySimulator()
 
         # List of mutations of the form (cell_pos, string_from, string_to)
@@ -87,7 +94,7 @@ class ArrayHandler:
         :param b_pos: (x, y) position of second cell
         :return: True if distance <= threshold
         """
-        r_min = 200
+        r_min = 210
         return abs(a_pos[0] - b_pos[0]) + abs(a_pos[1] - b_pos[1]) <= r_min
 
     def compute_cell_positions(self) -> dict[object, tuple[int, int]]:
@@ -135,6 +142,9 @@ class ArrayHandler:
                         if pos < other_pos:
                             if self.neighbours(pos, other_pos):
                                 adjacent_pairs.append((pos, other_pos))
+
+        logger.debug(f"Found {len(adjacent_pairs)} geometric pairs!")
+
         return adjacent_pairs
 
     def is_string_connected_without_cell(self, string_obj, pos_to_remove) -> bool:
@@ -171,6 +181,7 @@ class ArrayHandler:
             for cell in string.Cells:
                 pos = self.get_cell_position(cell)
                 mapping[pos] = string
+
         return mapping
 
     def build_cell_pos_to_obj_map(self) -> dict[point, object]:
@@ -305,6 +316,10 @@ class ArrayHandler:
             string_b = self.pos_to_string[cell_b]
             string_cell_pair_map[string_a.Name].append((cell_a, cell_b))
             string_cell_pair_map[string_b.Name].append((cell_b, cell_a))
+
+        logger.debug("Computed string cell pair map!")
+        for string_name, list_of_pairs in string_cell_pair_map.items():
+            logger.debug(f"{string_name} has {len(list_of_pairs)} pairs!")
 
         return string_cell_pair_map
 

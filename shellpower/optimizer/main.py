@@ -45,9 +45,8 @@ def run_optimization():
     DUAL_MUTATE_PROBABILITY: float = 0.8
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
-    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-03-30_22h38m22s\latest_texture.png"
-    TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
+    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\texture_builder\assets\cascadia_final_234merged.png"
+    TOP_SHELL_MODEL = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\arrays\v4\v4-ep9-guillotined-ascii.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
     # Create output directory
@@ -142,12 +141,12 @@ def run_optimization():
         """Mutate the array, and return the number of cell moves conducted"""
         if random.random() > DUAL_MUTATE_PROBABILITY:
             logger.info("Attempting single cell move!")
-            handler.mutate_adjacent()
-            return 1
+            did_move = handler.mutate_adjacent()
+            return int(did_move)
         else:
             logger.info("Attempting dual cell swap!")
-            handler.dual_mutate_adjacent()
-            return 2
+            did_move = handler.dual_mutate_adjacent()
+            return 2 * int(did_move)
 
     # Run simulated annealing optimization
     sa_optimizer: SimulatedAnnealing = SimulatedAnnealing(
