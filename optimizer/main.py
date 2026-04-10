@@ -1,6 +1,7 @@
 from shellpower import ArraySimulatorInput
-from shellpower.optimizer.config import test_cases, test_case_names
 from shellpower.simulator.Simulation import Simulation
+
+from config import test_cases, test_case_names
 from array_handler import ArrayHandler
 from simulated_annealing import SimulatedAnnealing
 import matplotlib.pyplot as plt
@@ -40,19 +41,21 @@ def run_optimization():
         - If a mutation worsens the objective by 2T, there is a 14% chance it will be kept.
     A temperature of zero means only beneficial changes are kept (hill climbing)
     """
-    INIT_TEMP: float = 0.3  # Watts; the score is -power of the whole array
+    INIT_TEMP: float = 0.0  # Watts; the score is -power of the whole array
     MAX_STRING_CELLS: int = 100
     MIN_STRING_CELLS: int = 93
     DUAL_MUTATE_PROBABILITY: float = 0.3
 
-    PROJECT_ROOT = Path(__file__).parent.parent.parent
-    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-04-04_00h40m15s imbalanced\latest_texture.png"
-    TOP_SHELL_MODEL = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\arrays\v4\v4-ep9-guillotined-ascii.stl"
-    BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
+    PROJECT_ROOT: Path = Path(__file__).parent.parent
+    INPUTS_DIR: Path = PROJECT_ROOT / "optimizer" / "inputs"
+    OUTPUTS_DIR: Path = PROJECT_ROOT / "optimizer" / "outputs"
+    BASE_TEXTURE_PATH: Path = OUTPUTS_DIR / "04-04-output-sample" / "latest_texture.png"
+    TOP_SHELL_MODEL: Path = INPUTS_DIR / "v4-ep9-guillotined-ascii.stl"
+    BYPASS_DIODES_JSON: Path = INPUTS_DIR / "bypass_diodes.json"
 
     # Create output directory
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-    simulation_dir = PROJECT_ROOT / "shellpower" / "outputs" / timestamp
+    simulation_dir = PROJECT_ROOT / "optimizer" / "outputs" / timestamp
     simulation_dir.mkdir(parents=True, exist_ok=True)
 
     # Set up logging

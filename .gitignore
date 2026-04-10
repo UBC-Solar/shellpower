@@ -23,7 +23,7 @@ src/.vs/
 src/packages
 
 # optimizer outputs
-shellpower/outputs
+optimizer/outputs
 
 # IDE folders
 .idea
