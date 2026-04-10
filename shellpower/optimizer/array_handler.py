@@ -16,7 +16,7 @@ class ArrayHandler:
     Container class for C# ArraySpec object. Provides necessary methods for optimization of array configuration.
     """
 
-    def __init__(self, array_spec: object, max_string_cells: int):
+    def __init__(self, array_spec: object, max_string_cells: int, min_string_cells: int):
         """
         Instantiate an ArrayHandler object with a given ArraySpec
 
@@ -25,6 +25,7 @@ class ArrayHandler:
 
         self.aspec: object = array_spec
         self.max_string_cells: int = max_string_cells
+        self.min_string_cells: int = min_string_cells
 
         logger.info("Computing cell positions...")
         self.cell_registry: dict[point, object] = self.build_cell_pos_to_obj_map()  # pos_key -> cell_object
@@ -41,6 +42,13 @@ class ArrayHandler:
         # Persistent cell-string lookup
         logger.info("Initializing cell-to-string lookup...")
         self.pos_to_string: dict[point, object] = self.build_cell_to_string_map()
+
+        string_cell_counts = {}
+        for cell_pos, string in self.pos_to_string.items():
+            num_cells = string_cell_counts.setdefault(string.Name, 0)
+            string_cell_counts[string.Name] = num_cells + 1
+        logger.debug("String cell counts:")
+        logger.debug(string_cell_counts)
 
         self._simulator = ArraySimulator()
 
@@ -87,7 +95,7 @@ class ArrayHandler:
         :param b_pos: (x, y) position of second cell
         :return: True if distance <= threshold
         """
-        r_min = 200
+        r_min = 210
         return abs(a_pos[0] - b_pos[0]) + abs(a_pos[1] - b_pos[1]) <= r_min
 
     def compute_cell_positions(self) -> dict[object, tuple[int, int]]:
@@ -135,6 +143,9 @@ class ArrayHandler:
                         if pos < other_pos:
                             if self.neighbours(pos, other_pos):
                                 adjacent_pairs.append((pos, other_pos))
+
+        logger.debug(f"Found {len(adjacent_pairs)} geometric pairs!")
+
         return adjacent_pairs
 
     def is_string_connected_without_cell(self, string_obj, pos_to_remove) -> bool:
@@ -171,6 +182,7 @@ class ArrayHandler:
             for cell in string.Cells:
                 pos = self.get_cell_position(cell)
                 mapping[pos] = string
+
         return mapping
 
     def build_cell_pos_to_obj_map(self) -> dict[point, object]:
@@ -306,7 +318,62 @@ class ArrayHandler:
             string_cell_pair_map[string_a.Name].append((cell_a, cell_b))
             string_cell_pair_map[string_b.Name].append((cell_b, cell_a))
 
+        logger.debug("Computed string cell pair map!")
+        for string_name, list_of_pairs in string_cell_pair_map.items():
+            logger.debug(f"{string_name} has {len(list_of_pairs)} pairs!")
+
         return string_cell_pair_map
+    
+    def rebalance_strings(self, max_attempts: int = 10_000) -> bool:
+        """
+        Repeatedly apply random mutations until all strings fall within the
+        allowed size range [min_string_cells, max_string_cells].
+
+        Mutations are only accepted if they reduce the number of violating
+        strings, or keep it the same (to allow escaping local traps). Any
+        mutation that increases violations is immediately rolled back.
+
+        :param max_attempts: Hard cap on mutation attempts to prevent infinite loops.
+        :return: True if all strings are within bounds, False if the cap was reached.
+        """
+
+        def count_violations() -> int:
+            return sum(
+                1 for string in self.aspec.Strings
+                if not (self.min_string_cells <= len(string.Cells) <= self.max_string_cells)
+            )
+
+        violations = count_violations()
+        if violations == 0:
+            logger.info("All strings already within allowed size range.")
+            return True
+
+        logger.info(f"Rebalancing strings. Initial violations: {violations}")
+
+        for attempt in range(max_attempts):
+            if violations == 0:
+                logger.info(f"All strings balanced after {attempt} mutations.")
+                return True
+
+            mutated = self.mutate_adjacent()
+            if not mutated:
+                logger.warning(f"No valid mutation available at attempt {attempt}. Stopping.")
+                return False
+
+            new_violations = count_violations()
+
+            if new_violations <= violations:
+                # Accept: progress made or neutral (allows escaping local traps)
+                violations = new_violations
+                logger.debug(f"Attempt {attempt}: accepted mutation, violations={violations}")
+            else:
+                # Reject: mutation made things worse
+                self.undo_mutate()
+                logger.debug(f"Attempt {attempt}: rejected mutation (would increase violations)")
+
+        logger.warning(f"Rebalance did not converge within {max_attempts} attempts. "
+                    f"Remaining violations: {violations}")
+        return False
 
     # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
@@ -351,6 +418,11 @@ class ArrayHandler:
         if len(target_string.Cells) >= self.max_string_cells:
             msg = f"Skipped mutation because {target_string.Name} already has " \
                 f"the maximum cell count of {self.max_string_cells}"
+            logger.debug(msg)
+            raise ValueError(msg)
+        if len(source_string.Cells) <= self.min_string_cells:
+            msg = f"Skipped mutation because {target_string.Name} already has " \
+                f"the minimum cell count of {self.min_string_cells}"
             logger.debug(msg)
             raise ValueError(msg)
         logger.debug("Ensuring mutation maintains continuity...")
