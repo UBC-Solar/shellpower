@@ -41,13 +41,13 @@ def run_optimization():
     A temperature of zero means only beneficial changes are kept (hill climbing)
     """
     INIT_TEMP: float = 0.3  # Watts; the score is -power of the whole array
-    MAX_STRING_CELLS: int = 107
-    DUAL_MUTATE_PROBABILITY: float = 0.8
+    MAX_STRING_CELLS: int = 100
+    MIN_STRING_CELLS: int = 93
+    DUAL_MUTATE_PROBABILITY: float = 0.3
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
-    # BASE_TEXTURE_PATH = PROJECT_ROOT / "arrays" / "v4" / "cascadia_v1_y160x90.png"
-    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-03-30_22h38m22s\latest_texture.png"
-    TOP_SHELL_MODEL = PROJECT_ROOT / "arrays" / "v4" / "v4-blender-guillotined.stl"
+    BASE_TEXTURE_PATH = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\shellpower\outputs\2026-04-04_00h40m15s imbalanced\latest_texture.png"
+    TOP_SHELL_MODEL = r"C:\Users\Jonah\Documents\UBC Solar\shellpower\arrays\v4\v4-ep9-guillotined-ascii.stl"
     BYPASS_DIODES_JSON = PROJECT_ROOT / "shellpower" / "bypass_diodes.json"
 
     # Create output directory
@@ -76,16 +76,21 @@ def run_optimization():
     logger.info(f"Top shell model: {TOP_SHELL_MODEL}")
     logger.info(f"Initial temperature: {INIT_TEMP} W")
     logger.info(f"String max size: {MAX_STRING_CELLS} cells")
+    logger.info(f"String min size: {MIN_STRING_CELLS} cells")
 
     start_time = time.perf_counter()  # Performance tracking
 
-    # Inswtantiate ArraySpec & Handler
+    # Instantiate ArraySpec & Handler
     aspec: object = Simulation.ArraySpec(
         str(BASE_TEXTURE_PATH),
         str(TOP_SHELL_MODEL),
         str(BYPASS_DIODES_JSON),
     )
-    handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS)
+    handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS, MIN_STRING_CELLS)
+
+    handler.rebalance_strings()
+    rebalanced_texture_path = simulation_dir / f"rebalanced.png"
+    handler.save_texture(rebalanced_texture_path)
 
     # Define function to minimize by simulated annealing
     texture_number = 0
@@ -142,12 +147,12 @@ def run_optimization():
         """Mutate the array, and return the number of cell moves conducted"""
         if random.random() > DUAL_MUTATE_PROBABILITY:
             logger.info("Attempting single cell move!")
-            handler.mutate_adjacent()
-            return 1
+            did_move = handler.mutate_adjacent()
+            return int(did_move)
         else:
             logger.info("Attempting dual cell swap!")
-            handler.dual_mutate_adjacent()
-            return 2
+            did_move = handler.dual_mutate_adjacent()
+            return 2 * int(did_move)
 
     # Run simulated annealing optimization
     sa_optimizer: SimulatedAnnealing = SimulatedAnnealing(
