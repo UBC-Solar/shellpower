@@ -50,61 +50,91 @@ def create_test_case_brainerd(
 
     return output
 
+# FSGP 2026 is on July 21-23
+year = 2026
+month = 7
+day = 22
 
-brainerd_10am_north = {
-    "Latitude": 46.4136132,
-    "Longitude": -94.2774524,
-    "HeadingRadians": 0,
-    "Utc": datetime(
-        2026, 7, 9, 23, 0, 0, tzinfo=timezone.utc
-    ),  # CDT is UTC-6
-    "TimezoneOffsetHours": 0,  # unused?
-    "TemperatureC": 25.0,
-    "DirectIrradianceWm2": 1050.0,
-    "DiffuseIrradianceWm2": 70.0,
-}
+# ASC Regs 2026 Rev-B: 14.9.E Track Hours
+# The track will be open for driving from 10:00 am – 6:00 pm local time (Day 1) and 9:00 am – 5:00 pm
+# local time for Days 2 and 3.
+hours = [10, 12, 14, 16, 18]
 
-brainerd_1pm_west = {
-    "Latitude": 46.4136132,
-    "Longitude": -94.2774524,
-    "HeadingRadians": pi / 2,
-    "Utc": datetime(
-        2026, 7, 9, 2, 0, 0, tzinfo=timezone.utc
-    ),  # CDT is UTC-6
-    "TimezoneOffsetHours": 0,  # unused?
-    "TemperatureC": 25.0,
-    "DirectIrradianceWm2": 1050.0,
-    "DiffuseIrradianceWm2": 70.0,
-}
+headings_deg = [0, 90, 180, -90]
 
-brainerd_3pm_east = {
-    "Latitude": 46.4136132,
-    "Longitude": -94.2774524,
-    "HeadingRadians": -pi / 2,
-    "Utc": datetime(
-        2026, 7, 9, 4, 0, 0, tzinfo=timezone.utc
-    ),  # CDT is UTC-6
-    "TimezoneOffsetHours": 0,  # unused?
-    "TemperatureC": 25.0,
-    "DirectIrradianceWm2": 1050.0,
-    "DiffuseIrradianceWm2": 70.0,
-}
+all_configs = []
 
-brainerd_5pm_south = {
-    "Latitude": 46.4136132,
-    "Longitude": -94.2774524,
-    "HeadingRadians": pi,
-    "Utc": datetime(
-        2026, 7, 9, 6, 0, 0, tzinfo=timezone.utc
-    ),  # CDT is UTC-6
-    "TimezoneOffsetHours": 0,  # unused?
-    "TemperatureC": 25.0,
-    "DirectIrradianceWm2": 1050.0,
-    "DiffuseIrradianceWm2": 70.0,
-}
+# Generate 20 test cases
+for hour in hours:
+    for heading_deg in headings_deg:
+        test_case = create_test_case_brainerd(
+            year=year,
+            month=month,
+            day=day,
+            hour=hour,
+            heading_deg=heading_deg
+        )
+        all_configs.append(
+            test_case
+        )
 
-test_cases = [brainerd_10am_north, brainerd_1pm_west, brainerd_3pm_east, brainerd_5pm_south]
-test_case_names = ["brainerd_10am_north", "brainerd_1pm_west", "brainerd_3pm_east", "brainerd_5pm_south"]
+
+# Manually created
+
+# brainerd_10am_north = {
+#     "Latitude": 46.4136132,
+#     "Longitude": -94.2774524,
+#     "HeadingRadians": 0,
+#     "Utc": datetime(
+#         2026, 7, 9, 23, 0, 0, tzinfo=timezone.utc
+#     ),  # CDT is UTC-6
+#     "TimezoneOffsetHours": 0,  # unused?
+#     "TemperatureC": 25.0,
+#     "DirectIrradianceWm2": 1050.0,
+#     "DiffuseIrradianceWm2": 70.0,
+# }
+
+# brainerd_1pm_west = {
+#     "Latitude": 46.4136132,
+#     "Longitude": -94.2774524,
+#     "HeadingRadians": pi / 2,
+#     "Utc": datetime(
+#         2026, 7, 9, 2, 0, 0, tzinfo=timezone.utc
+#     ),  # CDT is UTC-6
+#     "TimezoneOffsetHours": 0,  # unused?
+#     "TemperatureC": 25.0,
+#     "DirectIrradianceWm2": 1050.0,
+#     "DiffuseIrradianceWm2": 70.0,
+# }
+
+# brainerd_3pm_east = {
+#     "Latitude": 46.4136132,
+#     "Longitude": -94.2774524,
+#     "HeadingRadians": -pi / 2,
+#     "Utc": datetime(
+#         2026, 7, 9, 4, 0, 0, tzinfo=timezone.utc
+#     ),  # CDT is UTC-6
+#     "TimezoneOffsetHours": 0,  # unused?
+#     "TemperatureC": 25.0,
+#     "DirectIrradianceWm2": 1050.0,
+#     "DiffuseIrradianceWm2": 70.0,
+# }
+
+# brainerd_5pm_south = {
+#     "Latitude": 46.4136132,
+#     "Longitude": -94.2774524,
+#     "HeadingRadians": pi,
+#     "Utc": datetime(
+#         2026, 7, 9, 6, 0, 0, tzinfo=timezone.utc
+#     ),  # CDT is UTC-6
+#     "TimezoneOffsetHours": 0,  # unused?
+#     "TemperatureC": 25.0,
+#     "DirectIrradianceWm2": 1050.0,
+#     "DiffuseIrradianceWm2": 70.0,
+# }
+
+# test_cases = [brainerd_10am_north, brainerd_1pm_west, brainerd_3pm_east, brainerd_5pm_south]
+# test_case_names = ["brainerd_10am_north", "brainerd_1pm_west", "brainerd_3pm_east", "brainerd_5pm_south"]
 
 def test_time_shift() -> None:
     from pathlib import Path
