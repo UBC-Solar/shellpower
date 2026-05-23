@@ -89,14 +89,14 @@ class ArrayHandler:
     @staticmethod
     def neighbours(a_pos: tuple[int, int], b_pos: tuple[int, int]) -> bool:
         """
-        Determine whether two cells are adjacent using Manhattan distance.
+        Determine whether two cells are adjacent using cartesian distance.
 
         :param a_pos: (x, y) position of first cell
         :param b_pos: (x, y) position of second cell
         :return: True if distance <= threshold
         """
-        r_min = 210
-        return abs(a_pos[0] - b_pos[0]) + abs(a_pos[1] - b_pos[1]) <= r_min
+        r_min = 177
+        return (a_pos[0] - b_pos[0])**2 + (a_pos[1] - b_pos[1])**2 <= r_min**2
 
     def compute_cell_positions(self) -> dict[object, tuple[int, int]]:
         """
@@ -219,7 +219,9 @@ class ArrayHandler:
                 string_a: object = self.pos_to_string[a_pos]
 
                 try:
-                    self._update_cell_membership(a_pos, string_a, string_b)
+                    # Skip size check since the size remains the same after a swap both ways
+                    # If only one swap succeeds, the change is undone.
+                    self._update_cell_membership(a_pos, string_a, string_b, skip_size_check=True)
                 except ValueError:
                     # Move breaks string size constraint or continuity
                     continue
@@ -288,7 +290,7 @@ class ArrayHandler:
             string_a: object = self.pos_to_string[a_pos]
 
             try:
-                self._update_cell_membership(b_pos, string_b, string_a)
+                self._update_cell_membership(b_pos, string_b, string_a, skip_size_check=True)
             except ValueError:
                 # Move breaks string size constraint or continuity
                 continue
@@ -403,7 +405,7 @@ class ArrayHandler:
     # STATE MANAGEMENT (INTERNAL)
     # ============================================================
 
-    def _update_cell_membership(self, cell_pos: point, source_string: object, target_string: object) -> None:
+    def _update_cell_membership(self, cell_pos: point, source_string: object, target_string: object, skip_size_check=False) -> None:
         """
         Move the cell at position `from_pos` from `source_string` to `target_string`.
 
@@ -415,7 +417,7 @@ class ArrayHandler:
 
         # 0. Validate change
         logger.debug("Ensuring mutation doesn't exceed max string size...")
-        if len(target_string.Cells) >= self.max_string_cells:
+        if not skip_size_check and len(target_string.Cells) >= self.max_string_cells:
             msg = f"Skipped mutation because {target_string.Name} already has " \
                 f"the maximum cell count of {self.max_string_cells}"
             logger.debug(msg)

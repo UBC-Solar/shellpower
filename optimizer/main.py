@@ -1,7 +1,7 @@
 from shellpower import ArraySimulatorInput
 from shellpower.simulator.Simulation import Simulation
 
-from config import test_cases, test_case_names
+from config import BRAINERD_TEST_CASES, BRAINERD_TEST_CASE_NAMES
 from array_handler import ArrayHandler
 from simulated_annealing import SimulatedAnnealing
 import matplotlib.pyplot as plt
@@ -42,14 +42,13 @@ def run_optimization():
     A temperature of zero means only beneficial changes are kept (hill climbing)
     """
     INIT_TEMP: float = 0.0  # Watts; the score is -power of the whole array
-    MAX_STRING_CELLS: int = 100
-    MIN_STRING_CELLS: int = 93
-    DUAL_MUTATE_PROBABILITY: float = 0.3
+    MAX_STRING_CELLS: int = 98
+    MIN_STRING_CELLS: int = 95
+    DUAL_MUTATE_PROBABILITY: float = 0.8
 
     PROJECT_ROOT: Path = Path(__file__).parent.parent
     INPUTS_DIR: Path = PROJECT_ROOT / "optimizer" / "inputs"
-    OUTPUTS_DIR: Path = PROJECT_ROOT / "optimizer" / "outputs"
-    BASE_TEXTURE_PATH: Path = OUTPUTS_DIR / "04-04-output-sample" / "latest_texture.png"
+    BASE_TEXTURE_PATH: Path = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\v4_results\optimal_2026-04-12.png"
     TOP_SHELL_MODEL: Path = INPUTS_DIR / "v4-ep9-guillotined-ascii.stl"
     BYPASS_DIODES_JSON: Path = INPUTS_DIR / "bypass_diodes.json"
 
@@ -108,8 +107,8 @@ def run_optimization():
         handler.save_texture(simulation_dir / "latest_texture.png")
         texture_number += 1
 
-        case_powers = np.zeros(len(test_cases))
-        for i, (case, name) in enumerate(zip(test_cases, test_case_names)):
+        case_powers = np.zeros(len(BRAINERD_TEST_CASES))
+        for i, (case, name) in enumerate(zip(BRAINERD_TEST_CASES, BRAINERD_TEST_CASE_NAMES)):
 
             # DIRTY FIX
             # On my desktop PC, it slows down greatly (0.7s -> 9s) per run when the window hasn't been clicked in ~5s

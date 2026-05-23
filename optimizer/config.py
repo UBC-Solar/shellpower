@@ -58,11 +58,27 @@ day = 22
 # ASC Regs 2026 Rev-B: 14.9.E Track Hours
 # The track will be open for driving from 10:00 am – 6:00 pm local time (Day 1) and 9:00 am – 5:00 pm
 # local time for Days 2 and 3.
-hours = [10, 12, 14, 16, 18]
+hours = [
+    9,
+    11,
+    13,
+    15,
+    17,
+]
 
-headings_deg = [0, 90, 180, -90]
+headings_deg = [
+    0,
+    45,
+    90,
+    135,
+    180,
+    -45,
+    -90,
+    -135,
+]
 
-all_configs = []
+BRAINERD_TEST_CASES = []
+BRAINERD_TEST_CASE_NAMES = []
 
 # Generate 20 test cases
 for hour in hours:
@@ -74,8 +90,11 @@ for hour in hours:
             hour=hour,
             heading_deg=heading_deg
         )
-        all_configs.append(
+        BRAINERD_TEST_CASES.append(
             test_case
+        )
+        BRAINERD_TEST_CASE_NAMES.append(
+            f"brainerd_{hour}:00_{heading_deg}deg"
         )
 
 
