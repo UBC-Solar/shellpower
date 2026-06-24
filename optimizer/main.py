@@ -90,6 +90,8 @@ def run_optimization():
     )
     handler: ArrayHandler = ArrayHandler(aspec, MAX_STRING_CELLS, MIN_STRING_CELLS)
 
+    handler.visualize_adjacency()
+
     handler.rebalance_strings()
     rebalanced_texture_path = simulation_dir / f"rebalanced.png"
     handler.save_texture(rebalanced_texture_path)

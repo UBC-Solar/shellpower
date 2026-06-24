@@ -378,6 +378,115 @@ class ArrayHandler:
         return False
 
     # ============================================================
+    # VISUALIZATION
+    # ============================================================
+
+    def visualize_adjacency(
+        self,
+        out_path: Path | str | None = None,
+        highlight_pos: point | None = None,
+        show_cross_string_only: bool = False,
+        figsize: tuple[float, float] = (12, 12),
+    ):
+        """
+        Plot cell positions and the geometric adjacency graph between them.
+
+        Every cell is drawn as a point colored by its current string
+        membership. An edge is drawn between every pair in
+        self.geometric_pairs: edges within the same string are light gray,
+        and edges that cross a string boundary are red, so string outlines
+        and any adjacency-computation bugs are easy to spot at a glance.
+
+        :param out_path: If given, save the figure to this path instead of
+            calling plt.show().
+        :param highlight_pos: If given, that cell and its immediate
+            neighbors (per self.adj_lookup) are drawn larger and bolder,
+            and every other cell/edge is faded out. Use this to inspect the
+            neighborhood of a single cell, e.g. after a mutation.
+        :param show_cross_string_only: If True, skip drawing same-string
+            edges entirely and only show string-boundary crossings.
+        :param figsize: Matplotlib figure size, in inches.
+        :return: The matplotlib Figure (in case the caller wants to tweak
+            or save it themselves).
+        """
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        # Stable color per string name, so colors don't shuffle around
+        # if you re-plot after a mutation.
+        string_names = sorted({s.Name for s in self.pos_to_string.values()})
+        cmap = plt.colormaps["tab20"]
+        color_lookup = {name: cmap(i % cmap.N) for i, name in enumerate(string_names)}
+
+        neighbors_of_highlight: set[point] = set()
+        if highlight_pos is not None:
+            neighbors_of_highlight = set(self.adj_lookup[highlight_pos])
+
+        def is_dimmed(pos: point) -> bool:
+            if highlight_pos is None:
+                return False
+            return pos != highlight_pos and pos not in neighbors_of_highlight
+
+        # Draw edges first so cell points render on top of them.
+        for a_pos, b_pos in self.geometric_pairs:
+            same_string = self.pos_to_string[a_pos].Name == self.pos_to_string[b_pos].Name
+            if show_cross_string_only and same_string:
+                continue
+
+            involved_in_highlight = highlight_pos in (a_pos, b_pos)
+            xs, ys = [a_pos[0], b_pos[0]], [a_pos[1], b_pos[1]]
+
+            if highlight_pos is not None and not involved_in_highlight:
+                ax.plot(xs, ys, color="lightgray", linewidth=0.3, alpha=0.3, zorder=1)
+                continue
+
+            if same_string:
+                color = "lightgray"
+                width = 1.5 if involved_in_highlight else 0.5
+            else:
+                color = "red"
+                width = 2.0 if involved_in_highlight else 1.2
+            ax.plot(xs, ys, color=color, linewidth=width, zorder=2)
+
+        # Draw cell points, colored by string membership.
+        for pos, string in self.pos_to_string.items():
+            dimmed = is_dimmed(pos)
+            if pos == highlight_pos:
+                size, edge_w = 70, 1.5
+            elif pos in neighbors_of_highlight:
+                size, edge_w = 35, 0
+            else:
+                size, edge_w = 14, 0
+            ax.scatter(
+                pos[0], pos[1],
+                color=color_lookup[string.Name],
+                s=size,
+                alpha=0.25 if dimmed else 1.0,
+                edgecolors="black" if pos == highlight_pos else "none",
+                linewidths=edge_w,
+                zorder=4 if pos == highlight_pos else 3,
+            )
+
+        title = "Cell Adjacency Map"
+        if highlight_pos is not None:
+            title += f" — highlighting {highlight_pos} ({len(neighbors_of_highlight)} neighbors)"
+        ax.set_title(title)
+        ax.invert_yaxis()  # pixel coordinates: y increases downward
+        ax.set_aspect("equal")
+        ax.set_xlabel("x (px)")
+        ax.set_ylabel("y (px)")
+
+        if out_path is not None:
+            fig.savefig(str(out_path), dpi=200, bbox_inches="tight")
+            plt.close(fig)
+            logger.info(f"Saved adjacency visualization to {out_path}")
+        else:
+            plt.show()
+
+        return fig
+
+    # ============================================================
     # PRODUCE AND EVALUATE TEXTURES
     # ============================================================
 
