@@ -19,7 +19,7 @@ def create_gif(
     frame_duration = int(1000 / fps)
     pattern = re.compile(r"^texture_\d+\.(png|jpg|jpeg|bmp)$", re.IGNORECASE)
 
-    files = [f for f in os.listdir(base_path) if pattern.match(f) and int(f.split('_')[1].split('.')[0])<=1000]
+    files = [f for f in os.listdir(base_path) if pattern.match(f)]
     files = files[::skip_every]
     files.sort(key=natural_sort_key)
 
@@ -61,10 +61,10 @@ def create_gif(
 
 if __name__ == "__main__":
     # CONFIGURATION
-    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\outputs\2026-04-11_22h48m11s_seg1"
+    FOLDER = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\outputs\2026-06-23_23h45m50s"
     OUTPUT_DIR = Path(__file__).parent / "outputs"
     FPS = 50  # Max allowed: 50FPS
     MAX_W = 500  # Set to None to keep original size
-    SKIP_NUMBER = 4 # Only use every nth frame
+    SKIP_NUMBER = 10 # Only use every nth frame
 
     create_gif(FOLDER, fps=FPS, max_width=MAX_W, output_dir=OUTPUT_DIR, skip_every=SKIP_NUMBER)

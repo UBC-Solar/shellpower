@@ -48,7 +48,7 @@ def run_optimization():
 
     PROJECT_ROOT: Path = Path(__file__).parent.parent
     INPUTS_DIR: Path = PROJECT_ROOT / "optimizer" / "inputs"
-    BASE_TEXTURE_PATH: Path = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\v4_results\optimal_2026-04-12.png"
+    BASE_TEXTURE_PATH: Path = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\inputs\outrageous_start.png"
     TOP_SHELL_MODEL: Path = INPUTS_DIR / "v4-ep9-guillotined-ascii.stl"
     BYPASS_DIODES_JSON: Path = INPUTS_DIR / "bypass_diodes.json"
 

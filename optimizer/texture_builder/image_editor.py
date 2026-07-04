@@ -12,7 +12,7 @@ from PIL import Image, ImageTk
 from collections import deque
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-IMAGE_PATH = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\texture_builder\assets\tmp1.png"
+IMAGE_PATH = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\v4_results\optimal_2026-06-23.png"
 
 # The image will be scaled to fit within this display size
 DISPLAY_MAX_W = 1400

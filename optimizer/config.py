@@ -60,21 +60,21 @@ day = 22
 # local time for Days 2 and 3.
 hours = [
     9,
-    11,
+    # 11,
     13,
-    15,
+    # 15,
     17,
 ]
 
 headings_deg = [
     0,
-    45,
+    # 45,
     90,
-    135,
+    # 135,
     180,
-    -45,
+    # -45,
     -90,
-    -135,
+    # -135,
 ]
 
 BRAINERD_TEST_CASES = []
