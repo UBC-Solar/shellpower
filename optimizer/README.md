@@ -55,3 +55,7 @@ Parameters are set manually by changing constants at the top of [`main.py`](./ma
     - Strings are indicated by the R and G channels. Each R+G channel value pair denotes a unique string (i.e., all cells in that string are considered to be in series). The remaining blue channel colour is used to distinguish cells on the same string. For example, pixels with colour RGB(1, 2, 3) and RGB(1, 2, 4) are considered to be in the same string but in different cells, whereas pixels RGB(1, 2, 3) and RGB(1, 3, 3) are different cells on different strings. See the monday board linked in the top of this document for more context.
 - **INIT_TEMP**: The initial temperature for the simulated annealing model. The recommended value is 0, since testing has shown that a global minimum can be reached without the need for any backwards progress. More info on this parameter in [`simulated_annealing.py`](./simulated_annealing.py).
 - **BYPASS_DIODES_JSON**: A file describing the bypass diodes in the array. Currently, a dummy file is used to represent no bypass diodes. The process to insert more is TBD.
+
+### Running the Script
+
+TODO: insert screenshots and a walkthrough of what it looks like to run the simulator
