@@ -58,4 +58,30 @@ Parameters are set manually by changing constants at the top of [`main.py`](./ma
 
 ### Running the Script
 
-TODO: insert screenshots and a walkthrough of what it looks like to run the simulator
+**1. Create/choose a starting config**
+
+If you're continuing a previous optimization or already have a texture,
+simply set its path in `main.py`.
+
+If you don't yet have a texture file to use, create one using a copy of one of the Jupyter notebooks in `texture_builder`.
+There are additional scripts to help manually change textures as well:
+- `image_editor.py` helps with manual recoloring of textures (arrangement of cells into strings)
+- `flood_fill_swap.py` enables small tweaks to an existing config by swapping the string of two cells with each other.
+- `shift_image.py` helps update the padding on the edges of the texture image. Note that texture alignment on the top shell model should be confirmed using the Shellpower GUI.
+
+![alt text](image.png)
+*Fig. 1. Manually created & coloured texture file for UBC Solar's Cascadia made with `cascadia_texture_building_final.ipynb` and `image_editor.py`*
+
+**2. Set optimization parameters in `main.py`**
+
+Pass in the paths to the texture file, bypass diodes file, and STL file by setting the constants in the script.
+
+![alt text](image-1.png)
+
+
+**3. Ensure that the cell-adjacency plot is correct**
+
+The `ArrayHandler` object uses a hard-coded radius to determine which cells in the texture file are adjacent. Adjacency is used to enforce contiguity constraints on the textures during random mutation.
+
+In order to ensure that cell adjacency is computed correctly, a plot is shown at the start of an optimization run. Make sure that cells that you consider adjacent have lines joining them, and cells that are not adjacent are not connected. Adjust the radius iteratively if needed by editing `r_min` in `ArrayHandler.py:198`.
+
