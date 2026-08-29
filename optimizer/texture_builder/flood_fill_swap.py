@@ -272,7 +272,7 @@ class FloodSwapApp(tk.Frame):
 
 
 def main():
-    image_path = sys.argv[1] if len(sys.argv) > 1 else None
+    image_path = r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\texture_builder\assets\split_2026-08-27_manualcolored_2.png"
     root = tk.Tk()
     root.title("Pixel Flood Swap")
     FloodSwapApp(root, image_path)

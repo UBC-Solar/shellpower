@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Folder containing the texture_*.png files to compare
 TEXTURES_DIR: Path = Path(
-    r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\inputs\custom_tests_2"
+    r"C:\Users\Jonah\Documents\UBCSolar\2025\shellpower\optimizer\inputs\tests_2026-08-28"
 )
 
 # Texture used only to construct the ArraySpec (layout/geometry reference,
